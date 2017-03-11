@@ -1,0 +1,49 @@
+
+qcom,2348791_asus_mercury_4600mah_averaged_masterslave_mar25th2016 {
+	/* #2348791_Asus_Mercury_4600mAh_averaged_MasterSlave_Mar25th2016*/
+	qcom,max-voltage-uv = <4380000>;
+	qcom,nom-batt-capacity-mah = <4600>;
+	qcom,batt-id-kohm = <51>;
+	qcom,battery-beta = <3435>;
+	qcom,battery-type = "asus_mercury_4600mah_mar25th2016";
+	qcom,chg-rslow-comp-c1 = <3819856>;
+	qcom,chg-rslow-comp-c2 = <7500887>;
+	qcom,chg-rs-to-rslow = <635898>;
+	qcom,chg-rslow-comp-thr = <0xBE>;
+	qcom,checksum = <0x0105>;
+	qcom,gui-version = "PMI8950GUI - 2.0.0.15";
+	qcom,fg-profile-data = [
+		 ED 83 2F 7D 
+		 32 81 69 77 
+		 5F 83 D6 6C 
+		 AB 83 1A 8E 
+		 13 82 A3 9A 
+		 C9 BD DC CA 
+		 5B 0E EA 83 
+		 92 7C A1 80 
+		 31 76 65 83 
+		 9A 6C C2 88 
+		 6E 94 4D 82 
+		 C2 99 13 BD 
+		 06 CA 53 0E 
+		 8A 11 BA 59 
+		 91 6F E1 FA 
+		 15 3F 9D 3D 
+		 FE 3A 00 00 
+		 B6 44 74 14 
+		 FD 2E 00 00 
+		 00 00 00 00 
+		 00 00 00 00 
+		 AD 69 E5 68 
+		 7B 70 23 89 
+		 CD 75 0B 69 
+		 11 52 29 82 
+		 C0 74 00 63 
+		 13 9C E9 98 
+		 09 34 60 00 
+		 5F A0 71 0C 
+		 28 00 FF 36 
+		 F0 11 30 03 
+		 00 00 00 0C 
+	];
+};

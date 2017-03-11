@@ -2721,6 +2721,7 @@ static int asus_dump_regs(struct seq_file *m, void *data)
 	asus_dump_reg(chip, chip->misc_base + RT_STS, "MISC Status", m);
 	for (addr = 0xF0; addr <= 0xFF; addr++)
 		asus_dump_reg(chip, chip->misc_base + addr, "MISC CFG", m);
+
 	return 0;
 }
 
@@ -5060,6 +5061,11 @@ int asus_otg_boost_enable(int enable, bool high_current)
 	else
 		high_current = true;
 
+	if (get_prop_batt_capacity(chip) <= 20 && g_reverse_charger_mode) {
+		pr_info("battery capacity not larger than 20. disable otg\n");
+		enable = 0;
+	}
+
 	pr_info("%s boost with %s current mode\n", enable ? "Enabling": "Disabling", high_current ? "High" : "Low");
 	if (enable) {
 		chip->chg_otg_enabled = true;
@@ -6240,18 +6246,17 @@ static int smbchg_battery_get_property(struct power_supply *psy,
 {
 	struct smbchg_chip *chip = container_of(psy,
 				struct smbchg_chip, batt_psy);
-	int battery_status, batt_volt;
+	int battery_status;
 	int rc;
 	u8 reg;
 	switch (prop) {
 	case POWER_SUPPLY_PROP_STATUS:
 		battery_status = get_prop_batt_status(chip);
-		batt_volt = get_prop_batt_voltage_now(chip);
 		if ((get_prop_batt_capacity(chip) == 100 && chip->asus_cable_online)
 				|| get_prop_batt_status(chip) == POWER_SUPPLY_STATUS_FULL) {
 			val->intval = POWER_SUPPLY_STATUS_FULL;
 		}else if (chip->asus_show_qc_flag && chip->asus_cable_online) {
-			if (batt_volt > 4300000)
+			if (get_prop_batt_capacity(chip) > 70)
 				val->intval = POWER_SUPPLY_STATUS_NOT_QUICKCHARGING;
 			else
 				val->intval = POWER_SUPPLY_STATUS_QUICKCHARGING;
@@ -8757,11 +8762,27 @@ static void asus_thermal_policy_level1(struct smbchg_chip *chip)
 					asus_thermal_policy_qc20(chip);
 				else if (chip->usb_supply_type == POWER_SUPPLY_TYPE_USB_HVDCP_3)
 					asus_thermal_policy_qc30(chip, true);
+				else {
+					// CDP, DCP, SDP, typeC 1.5A, OTHER....
+#ifdef PD_CHARGING_DRIVER_SUPPORT
+					if (chip->asus_typec_chg == TYPEC_1_5A_CHARGER) {
+						pr_info("reset charging current for typeC 1.5A\n");
+						asus_typec_DFP_setting(chip);
+					} else
+#endif
+					if (chip->usb_supply_type == POWER_SUPPLY_TYPE_USB)
+						asus_set_high_usb_chg_current(chip, 500);
+					else if (chip->usb_supply_type == POWER_SUPPLY_TYPE_USB_CDP)
+						asus_set_high_usb_chg_current(chip, 1400);
+					else if (chip->usb_supply_type == POWER_SUPPLY_TYPE_USB_DCP)
+						asus_set_high_usb_chg_current(chip, 900);
+				}
 				break;
 			case Dual_ASUS_2A:
 				if (!chip->asus_hvdcp_flag)
 					asus_thermal_policy_10w(chip);
 				else {
+					asus_Dual_Enable(1000, 2000);
 					if (chip->usb_supply_type == POWER_SUPPLY_TYPE_USB_HVDCP_3)
 						asus_thermal_policy_qc30(chip, true);
 					else if (chip->usb_supply_type == POWER_SUPPLY_TYPE_USB_HVDCP)
@@ -8791,12 +8812,17 @@ static void asus_thermal_policy_level2(struct smbchg_chip *chip)
 		smbchg_usb_suspend(chip, false);
 	chip->asus_thermal_policy_flag = asus_thermal_level2;
 	asus_Dual_Disable();
-	if (batt_cap >= 15)
-		asus_set_high_usb_chg_current(chip, 500);
-	else if (batt_cap >= 8 && batt_cap < 15)
-		asus_set_high_usb_chg_current(chip, 700);
-	else if (batt_cap < 8)
-		asus_set_high_usb_chg_current(chip, 900);
+	if (chip->usb_supply_type == POWER_SUPPLY_TYPE_USB
+			&& chip->asus_typec_chg == TYPEC_UNKNOWN_CHARGER)
+			asus_set_high_usb_chg_current(chip, 500);
+	else {
+		if (batt_cap >= 15)
+			asus_set_high_usb_chg_current(chip, 500);
+		else if (batt_cap >= 8 && batt_cap < 15)
+			asus_set_high_usb_chg_current(chip, 700);
+		else if (batt_cap < 8)
+			asus_set_high_usb_chg_current(chip, 900);
+	}
 }
 
 static void asus_thermal_policy_level3(struct smbchg_chip *chip)
@@ -8812,9 +8838,14 @@ static void asus_thermal_policy_reset(struct smbchg_chip *chip)
 	pr_info("thermal Level reset\n");
 	if (chip->asus_thermal_policy_flag >= asus_thermal_level1 && chip->asus_cable_online) {
 #ifdef PD_CHARGING_DRIVER_SUPPORT
-		if (chip->asus_typec_chg >= TYPEC_PD_5V_CHARGER)
+		if (chip->asus_typec_chg >= TYPEC_PD_5V_CHARGER) {
+			if (chip->asus_dual_flag == Dual_ASUS_2A)
+				asus_Dual_Enable(1000, 2000);
+			else if (chip->asus_dual_flag == Dual_TYPEC_3A)
+				asus_Dual_Enable(1500, 2000);
+
 			usbpd_jump_voltage();
-		else {
+		} else {
 #endif
 			switch (chip->asus_dual_flag) {
 				case Dual_single:
@@ -8933,7 +8964,7 @@ static void asus_JEITA_rule(struct smbchg_chip *chip) {
 		pr_info("soc: %d%%, voltage: %d mV, temp: %d C, current: %d mA, last_temp_state: %d\n",
 			batt_cap, batt_volt/1000, batt_temp/10,
 			-get_prop_batt_current_now(chip)/1000, chip->asus_batt_last_state);
-		ASUSEvtlog("[BAT][Ser]report Capacity ==>%d, V:%dmV, Cur:%dmA, Temp:%dC",
+		ASUSEvtlog("[BAT][Ser]report Capacity ==>%d, V:%dmV, Cur:%dmA, Temp:%dC\n",
 			batt_cap, batt_volt/1000, -get_prop_batt_current_now(chip)/1000, batt_temp/10);
 		pr_info("usb removed!! bypass JEITA check\n");
 		queue_delayed_work(smbchg_wq, &chip->asus_JEITA_check_work, msecs_to_jiffies(60000));
@@ -9090,7 +9121,7 @@ skip_jeita_setting:
 		batt_cap, batt_volt/1000, batt_temp/10,
 		-get_prop_batt_current_now(chip)/1000, chip->asus_batt_last_state);
 	pr_info("hvdcp flag = %d, dual flag : %d\n", chip->asus_hvdcp_flag, chip->asus_dual_flag);
-	ASUSEvtlog("[BAT][Ser]report Capacity ==>%d, V:%dmV, Cur:%dmA, Temp:%dC",
+	ASUSEvtlog("[BAT][Ser]report Capacity ==>%d, V:%dmV, Cur:%dmA, Temp:%dC\n",
 			batt_cap, batt_volt/1000, -get_prop_batt_current_now(chip)/1000, batt_temp/10);
 
 #ifdef PD_CHARGING_DRIVER_SUPPORT
@@ -9168,11 +9199,13 @@ static void asus_adapter_detect_func(struct work_struct *work) {
 		}
 	} else {
 		if (adc_result > 0xBE) {
-			chip->asus_dual_flag = Dual_ASUS_2A;
-			if (chip->asus_hvdcp_flag)
-				ASUS_CHG_TYPE = "HVDCP_PB_2A";
-			else
+			if (chip->asus_hvdcp_flag) {
+				chip->asus_dual_flag = Dual_single;
+				ASUS_CHG_TYPE = "HVDCP_PB_1A";
+			} else {
+				chip->asus_dual_flag = Dual_ASUS_2A;
 				ASUS_CHG_TYPE = "DCP_PB_2A";
+			}
 		} else {
 			chip->asus_dual_flag = Dual_single;
 			ASUS_CHG_TYPE = "UNDEFINED";

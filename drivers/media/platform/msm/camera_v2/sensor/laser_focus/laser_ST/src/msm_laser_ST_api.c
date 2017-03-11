@@ -1405,6 +1405,13 @@ static int __init Laser_init_module(void)
 {
 	int32_t rc = 0;
 	CDBG("Enter\n");
+
+	/* only ER3 and PR is ST laser */
+	if (g_ASUS_hwID != 3 && g_ASUS_hwID != 4) {
+		LOG_Handler(LOG_CDBG, "%s: hepta laser, ignore this function\n", __func__);
+		return 0;
+	}
+
 	mutex_init(&vl6180x_mutex);
 	rc = platform_driver_probe(&msm_laser_focus_platform_driver,
 		laser_ST_platform_probe);

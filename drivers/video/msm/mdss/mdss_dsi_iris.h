@@ -19,6 +19,7 @@
 
 #define MIPI_SWAP
 #define DSI_BUF_SIZE	1024
+#define ENABLE_TCON_CABC
 
 #define IRIS_DTG_ADDR	0xF1200000
 #define IRIS_DPORT_ADDR	0xF1220000
@@ -427,4 +428,9 @@ void iris_calc_nrv(struct mdss_mdp_ctl *ctl);
 int iris_fw_download_cont_splash(struct mdss_panel_data *pdata, bool debug);
 void mdss_dsi_iris_init_ctl(struct mdss_mdp_ctl *ctl);
 void mdss_dsi_iris_init_pdata(struct mdss_panel_data *pdata);
+#ifdef ENABLE_TCON_CABC
+void iris_tcon_cabc_configure(struct mdss_dsi_ctrl_pdata *ctrl, u8 brightness);
+void iris_tcon_cabc_on_off(u8 addr, u8 value);
+
+#endif
 #endif //MDSS_DSI_IRIS_H

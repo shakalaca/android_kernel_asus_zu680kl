@@ -258,15 +258,6 @@ static int us5587_probe(struct i2c_client *client,
 			data->gpio_134, client->addr);
 	//to get gpio information ---
 	
-	//Enable gpio_134 +++	
-	ret = gpio_request(data->gpio_134, "us5587-gpio-134");
-	if (ret) 
-		printk("[BAT][CHG] failed to request gpio134\n");
-
-	gpio_direction_output(data->gpio_134, 1);
-	msleep(100);
-	//Enable gpio_134  ---
-
 	rc = sysfs_create_group(&client->dev.kobj, &dump_reg_attr_group);
 	if (rc)
 		goto exit_remove;

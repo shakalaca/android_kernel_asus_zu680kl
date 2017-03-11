@@ -37,6 +37,15 @@ enum {
 	ID_MAX,
 };
 
+static char *ee_client_lut[] = {
+    "APSS",
+    "MPSS",
+    "WCSS",
+    "TZ",
+    "LPASS"
+};
+
+
 static char *msm_rpmstats_id_labels[ID_MAX] = {
 	[ID_COUNTER] = "Count",
 	[ID_ACCUM_TIME_SCLK] = "Total time(uSec)",
@@ -168,9 +177,7 @@ static inline int msm_rpmstats_copy_stats_v2(
 				i, offsetof(struct msm_rpm_stats_data_v2,
 					client_votes));
 
-		data.subsystem_votes = msm_rpmstats_read_quad_register_v2(reg,
-				i, offsetof(struct msm_rpm_stats_data_v2,
-					subsystem_votes));
+		data.subsystem_votes = data.client_votes & ((1 << ARRAY_SIZE(ee_client_lut)) - 1);
 		length += msm_rpmstats_append_data_to_buf(prvdata->buf + length,
 				&data, sizeof(prvdata->buf) - length);
 		prvdata->read_idx++;
@@ -570,8 +577,7 @@ static int rpm_stats_suspend(struct device *dev)
 
 	data.client_votes = msm_rpmstats_read_quad_register_v2(reg, 0,
 				offsetof(struct msm_rpm_stats_data_v2, client_votes));
-	data.subsystem_votes = msm_rpmstats_read_quad_register_v2(reg, 0,
-				offsetof(struct msm_rpm_stats_data_v2, subsystem_votes));
+	data.subsystem_votes = data.client_votes & ((1 << ARRAY_SIZE(ee_client_lut)) - 1);
 
 	printk("[RPM] Suspend: Voting status: Client: 0x%x, Subsystem: 0x%0x\n",
 			data.client_votes, data.subsystem_votes);
@@ -584,7 +590,7 @@ static int rpm_stats_resume(struct device *dev)
 {
 	void __iomem *reg =0;
 	struct msm_rpm_stats_data_v2 data;
-	int i, length;
+	int i, j, length;
 	char stat_type[5];
 	u64 time_in_last_mode;
 	u64 time_since_last_mode;
@@ -609,8 +615,7 @@ static int rpm_stats_resume(struct device *dev)
 		if(0 == i) {
 			data.client_votes = msm_rpmstats_read_quad_register_v2(reg,	i,
 					offsetof(struct msm_rpm_stats_data_v2, client_votes));
-			data.subsystem_votes = msm_rpmstats_read_quad_register_v2(reg, i,
-					offsetof(struct msm_rpm_stats_data_v2, subsystem_votes));
+			data.subsystem_votes = data.client_votes & ((1 << ARRAY_SIZE(ee_client_lut)) - 1);
 		}
 
 		stat_type[4] = 0;
@@ -625,6 +630,10 @@ static int rpm_stats_resume(struct device *dev)
 		if(0 == i) {
 			printk("[RPM] Resume: Client votes: 0x%x, Subsystem votes: 0x%x\n",
 				data.client_votes, data.subsystem_votes);
+			for(j = 0; j < ARRAY_SIZE(ee_client_lut); j++)
+				if (data.subsystem_votes & (1 << j))
+					printk("[RPM] Resume: Client %s votes\n", ee_client_lut[j]);
+
 
 			printk("[RPM] Mode:%s, Count:%8d, In last mode(ms):%11llu, Since last mode(s):%8llu, Actual last sleep(ms):%11llu\n",
 				stat_type, data.count, time_in_last_mode,

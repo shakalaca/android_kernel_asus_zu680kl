@@ -2336,6 +2336,7 @@ static int dwc3_msm_power_set_property_usb(struct power_supply *psy,
 	struct dwc3 *dwc = platform_get_drvdata(mdwc->dwc3);
 	struct dwc3_otg *dotg = dwc->dotg;
 	struct usb_phy *phy = dotg->otg.phy;
+	char *evt_mode_string = NULL;
 
 	switch (psp) {
 	case POWER_SUPPLY_PROP_USB_OTG:
@@ -2363,6 +2364,10 @@ static int dwc3_msm_power_set_property_usb(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_PRESENT:
 		dev_dbg(mdwc->dev, "%s: notify xceiv event\n", __func__);
 		mdwc->vbus_active = val->intval;
+		
+		if(!mdwc->vbus_active)
+			ASUSEvtlog("[USB] set_chg_mode: None\n");
+
 		if (mdwc->otg_xceiv && !mdwc->ext_inuse && !mdwc->in_restart) {
 			if (mdwc->ext_xceiv.bsv == val->intval)
 				break;
@@ -2392,9 +2397,11 @@ static int dwc3_msm_power_set_property_usb(struct power_supply *psy,
 		switch (psy->type) {
 		case POWER_SUPPLY_TYPE_USB:
 			mdwc->charger.chg_type = DWC3_SDP_CHARGER;
+			evt_mode_string = "USB";
 			break;
 		case POWER_SUPPLY_TYPE_USB_DCP:
 			mdwc->charger.chg_type = DWC3_DCP_CHARGER;
+			evt_mode_string = "ASUS AC";
 			break;
 		case POWER_SUPPLY_TYPE_USB_HVDCP:
 			mdwc->charger.chg_type = DWC3_DCP_CHARGER;
@@ -2402,6 +2409,7 @@ static int dwc3_msm_power_set_property_usb(struct power_supply *psy,
 			break;
 		case POWER_SUPPLY_TYPE_USB_CDP:
 			mdwc->charger.chg_type = DWC3_CDP_CHARGER;
+			evt_mode_string = "ASUS AC";
 			break;
 		case POWER_SUPPLY_TYPE_USB_ACA:
 			mdwc->charger.chg_type = DWC3_PROPRIETARY_CHARGER;
@@ -2413,6 +2421,8 @@ static int dwc3_msm_power_set_property_usb(struct power_supply *psy,
 
 		if (mdwc->charger.chg_type != DWC3_INVALID_CHARGER)
 			mdwc->chg_state = USB_CHG_STATE_DETECTED;
+		if (evt_mode_string != NULL)
+			ASUSEvtlog("[USB] set_chg_mode: %s\n", evt_mode_string);
 
 		dev_dbg(mdwc->dev, "%s: charger type: %s\n", __func__,
 				chg_to_string(mdwc->charger.chg_type));

@@ -15,23 +15,29 @@ extern struct power_supply *usb_psy;
 extern int asus_otg_boost_enable(int, bool);
 extern void notify_dual_role_change(void);
 extern int g_reverse_charger_mode;
-int fix_data_role = 0;
 unsigned char old_vbus=0;
 
 /* init setting for TYPE_PWR_SRC_CAP */
 	static u32 init_src_caps[1] = {
+		/*5V, 0.5A, Fixed */
+		PDO_FIXED(PD_VOLTAGE_5V, PD_CURRENT_500MA, PDO_FIXED_FLAGS)
+	};
+
+	static u32 init_src_caps_high[1] = {
 		/*5V, 1.5A, Fixed */
 		PDO_FIXED(PD_VOLTAGE_5V, PD_CURRENT_1500MA, PDO_FIXED_FLAGS)
 	};
 
 	/* init setting for TYPE_PWR_SNK_CAP */
-	static u32 init_snk_cap[3] = {
-		/*5V, 0.9A, Fixed */
-		PDO_FIXED(PD_VOLTAGE_5V, PD_CURRENT_900MA, PDO_FIXED_FLAGS),
-		/*min 5V, max 20V, power 60W, battery */
-		PDO_BATT(PD_VOLTAGE_5V, PD_MAX_VOLTAGE_21V, PD_POWER_15W),
-		/*min5V, max 5V, current 3A, variable */
-		PDO_VAR(PD_VOLTAGE_5V, PD_MAX_VOLTAGE_21V, PD_CURRENT_3A)
+	static u32 init_snk_cap[4] = {
+		/*5V, 3A, Fixed */
+		PDO_FIXED(PD_VOLTAGE_5V, PD_CURRENT_3A, PDO_FIXED_FLAGS),
+		/*6V, 3A, Fixed */
+		PDO_FIXED(PD_VOLTAGE_6V, PD_CURRENT_3A, PDO_FIXED_FLAGS),
+		/*7.5V,2A, Fixed */
+		PDO_FIXED(PD_VOLTAGE_7P5V, PD_CURRENT_2A, PDO_FIXED_FLAGS),
+		/*9V, 2A, Fixed */
+		PDO_FIXED(PD_VOLTAGE_9V, PD_CURRENT_2A, PDO_FIXED_FLAGS)
 	};
 	/* init setting for TYPE_SVID */
 	static u8 init_svid[4] = { 0x00, 0x00, 0x01, 0xff };
@@ -639,14 +645,19 @@ void interface_init(void)
 	pbuf_rx_front = 0;
 	pbuf_tx_rear = 0;
 	downstream_pd_cap = 0;
-	fix_data_role = 0;
 }
 
 void send_initialized_setting(void)
 {	
-	/* send TYPE_PWR_SRC_CAP init setting */
-	send_pd_msg(TYPE_PWR_SRC_CAP, (const char *)init_src_caps,
+	if(g_reverse_charger_mode) {
+		/* send TYPE_PWR_SRC_CAP init setting */
+		send_pd_msg(TYPE_PWR_SRC_CAP, (const char *)init_src_caps_high,
+			   sizeof(init_src_caps_high));
+	} else {
+		/* send TYPE_PWR_SRC_CAP init setting */
+		send_pd_msg(TYPE_PWR_SRC_CAP, (const char *)init_src_caps,
 			   sizeof(init_src_caps));
+	}
 
 	/* send TYPE_PWR_SNK_CAP init setting */
 	send_pd_msg(TYPE_PWR_SNK_CAP, (const char *)init_snk_cap,
@@ -699,6 +710,8 @@ void chip_register_init(void)
 	/*Minimum Power in 500mW units*/
 	OhioWriteReg(MIN_POWER_SETTING, 0x002);  /* 1W */
 	#endif
+	OhioWriteReg(0x6b, OhioReadReg(0x6b)|0x0c);
+
 }
 
 inline void reciever_reset_queue(void)
@@ -978,6 +991,7 @@ u8 pd_rdo_5v[PD_ONE_DATA_OBJECT_SIZE];
 u8 pdo_response;
 void usbpd_jump_voltage(void);
 extern struct completion rdo_completion;
+extern struct completion prswap_completion;
 struct power_data_object *pdo_cal;
 struct power_list {
 	u32 voltmv;
@@ -1141,7 +1155,6 @@ void fit_rdo_value(void){
 
 		pdo_max =RDO_FIXED(p_list[mode].index + 1, p_list[mode].currma, p_list[mode].currma, 0);
 
-		pdo_max |= RDO_CAP_MISMATCH;//wait check
 		set_rdo_value(pdo_max & 0xff, (pdo_max >> 8) & 0xff,
 			      (pdo_max >> 16) & 0xff,
 			      (pdo_max >> 24) & 0xff);
@@ -1398,8 +1411,6 @@ void pd_vbus_control_default_func(bool on)
 		asus_otg_boost_enable(0,(bool)g_reverse_charger_mode);
 	}
 
-	fix_data_role = 0;
-
 	if (g_reverse_charger_mode) {
 		if (!usb_psy) {
 			pr_err("USB power_supply not found\n");
@@ -1408,6 +1419,7 @@ void pd_vbus_control_default_func(bool on)
 			power_supply_set_usb_otg(usb_psy, on);
 		}
 	}
+	notify_dual_role_change();
 	#ifdef OHIO_DEBUG
 	pr_info("=====handle vbus control %d\n", (int)on);
 	#endif
@@ -1451,7 +1463,7 @@ void pd_cc_status_default_func(u8 cc_status)
 void pd_drole_change_default_func(bool on)
 {
 	/* data role changed */
-	if(g_reverse_charger_mode || fix_data_role) {
+	if(g_reverse_charger_mode) {
 		pr_info("ignore data role\n");
 		return;
 	}
@@ -1476,7 +1488,7 @@ void pd_drole_change_default_func(bool on)
   */
 u8 recv_pd_cmd_rsp_default_callback(void *para, u8 para_len)
 {
-	u8 pd_cmd, pd_response, prmode;
+	u8 pd_cmd, pd_response;
 	pd_cmd =  *(u8 *)para;
 	pd_response = *((u8 *)para + 1);
 
@@ -1528,21 +1540,7 @@ u8 recv_pd_cmd_rsp_default_callback(void *para, u8 para_len)
 		
 		if (pd_response == CMD_SUCCESS) {
 			pr_info("pd_cmd PRSwap result is successful\n");
-
-			prmode = get_power_role();
-
-			printk("pd power swap to %s mode\n",prmode ? "Source" : "Sink");
-			fix_data_role = 1;
-			if (prmode == 0) {
-				power_supply_set_usb_otg(usb_psy,0);
-			} else if (prmode == 1){
-				power_supply_set_usb_otg(usb_psy,1);
-			} else {
-				fix_data_role = 0;
-				pr_err("get power role failed\n");
-				return 2;
-			}
-			notify_dual_role_change();
+			complete(&prswap_completion);
 		}
 		else if (pd_response == CMD_REJECT)
 			pr_info("pd_cmd PRSwap result is rejected\n");

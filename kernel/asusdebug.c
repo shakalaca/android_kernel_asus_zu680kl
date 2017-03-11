@@ -25,22 +25,22 @@ char evtlog_poweroff_reason[50];
 extern int ASUSEvt_poweroff_reason;
 
 static const char * const ASUSEvt_poweroff_reason_str[] = {
-        [0] = "Software",
-        [1] = "PS_HOLD/MSM controlled shutdown",
-        [2] = "PMIC watchdog",
-        [3] = "Keypad_Reset1",
-        [4] = "Keypad_Reset2",
-        [5] = "Simultaneous power key and reset line",
-        [6] = "Reset line/Volume Down Key",
-        [7] = "Long Power Key hold",
-        [8] = "N/A",
-        [9] = "N/A",
-        [10] = "N/A",
-        [11] = "Charger ENUM_TIMER, BOOT_DONE",
-        [12] = "Thermal Fault Tolerance",
-        [13] = "Under Voltage Lock Out",
-        [14] = "Overtemp",
-        [15] = "Stage 3 reset",
+        [0] = "[Soft reset]",
+        [1] = "[Reset via PS_HOLD]",
+        [2] = "[PMIC Watchdog]",
+        [3] = "[Battery lost]",
+        [4] = "[Keypad_Reset2]",
+        [5] = "[Simultaneous power key and reset line]",
+        [6] = "[Reset line/Volume Down Key]",
+        [7] = "[Power Key]",
+        [8] = "[N/A]",
+        [9] = "[N/A]",
+        [10] = "[N/A]",
+        [11] = "[Charger]",
+        [12] = "[N/A]",
+        [13] = "[UVLO]",
+        [14] = "[PMIC Overtemp]",
+        [15] = "[Fail safe reset]",
 };
 
 extern int nSuspendInProgress;
@@ -54,8 +54,45 @@ static int bootup = -MAX_ERRNO;
 static void do_write_event_worker(struct work_struct *work);
 static DECLARE_WORK(eventLog_Work, do_write_event_worker);
 
+/*ASUS-BBSP SubSys Health Record+++*/
+static char g_SubSys_W_Buf[SUBSYS_W_MAXLEN];
+static char g_SubSys_C_Buf[SUBSYS_C_MAXLEN]="0000-0000-0000-0000-0000";
+static void do_write_subsys_worker(struct work_struct *work);
+static void do_count_subsys_worker(struct work_struct *work);
+static void do_delete_subsys_worker(struct work_struct *work);
+static DECLARE_WORK(subsys_w_Work, do_write_subsys_worker);
+static DECLARE_WORK(subsys_c_Work, do_count_subsys_worker);
+static DECLARE_WORK(subsys_d_Work, do_delete_subsys_worker);
+static struct completion SubSys_C_Complete;
+/*ASUS-BBSP SubSys Health Record---*/
+
 static struct mutex mA;
 #define AID_SDCARD_RW 1015
+static void acc_pwr_key_count(void)
+{
+	struct file *fp = NULL;
+	mm_segment_t oldfs;
+	char value[20];
+	loff_t pos = 0;
+
+	fp = filp_open("/asdf/pwk_count", O_RDWR|O_CREAT, 0664);
+	if (IS_ERR_OR_NULL(fp))
+		return;
+
+	oldfs = get_fs();
+	set_fs(KERNEL_DS);
+
+	if (vfs_read(fp, value, strlen(value), &pos) >= 0) {
+		sprintf(value, "%ld", simple_strtol(value, NULL, 10) + 1);
+		pos = 0;
+		vfs_write(fp, value, strlen(value), &pos);
+	}
+
+	set_fs(oldfs);
+	vfs_fsync(fp, 0);
+	filp_close(fp, NULL);
+}
+
 static void do_write_event_worker(struct work_struct *work)
 {
 	char buffer[256];
@@ -75,21 +112,32 @@ static void do_write_event_worker(struct work_struct *work)
 			g_hfileEvtlog = sys_open(ASUS_EVTLOG_PATH".txt", O_CREAT|O_RDWR|O_SYNC, 0444);
 		}
 
+		if (!strcmp(evtlog_bootup_reason, "panic")) {
+			sprintf(buffer, "[Reboot] Kernel panic\n");
+			sys_write(g_hfileEvtlog, buffer, strlen(buffer));
+			memset(buffer, 0, sizeof(char)*256);
+		} else if (!strcmp(evtlog_bootup_reason, "watchdog")) {
+                        sprintf(buffer, "[Reboot] Watchdog reset\n");
+                        sys_write(g_hfileEvtlog, buffer, strlen(buffer));
+                        memset(buffer, 0, sizeof(char)*256);
+                }
+
                 if (bootup < 0) {
-		    if (ASUSEvt_poweroff_reason < 0)
-                            strcpy(evtlog_poweroff_reason, "Normal");
-                    else
-                            strcpy(evtlog_poweroff_reason, ASUSEvt_poweroff_reason_str[ASUSEvt_poweroff_reason]);
+			if (ASUSEvt_poweroff_reason < 0)
+				strcpy(evtlog_poweroff_reason, "[Power lost][Unknown]");
+			else
+				strcpy(evtlog_poweroff_reason, ASUSEvt_poweroff_reason_str[ASUSEvt_poweroff_reason]);
 
-		    sprintf(buffer, "\n\n---------------System Boot----%s---------\n"
-			    "###### Bootup Reason: %s ######\n"
-                            "###### Power off Reason: %s ###### \n",
-                            ASUS_SW_VER, evtlog_bootup_reason, evtlog_poweroff_reason);
+			if ((ASUSEvt_poweroff_reason == 7 || ASUSEvt_poweroff_reason == 15)
+				&& strcmp(evtlog_bootup_reason, "panic")
+				&& strcmp(evtlog_bootup_reason, "watchdog"))
+				acc_pwr_key_count();
 
-                    printk(KERN_INFO "\n\n---------------System Boot----%s---------\n"
-                            "###### Bootup Reason: %s ######\n"
-                            "###### Power off Reason: %s ###### \n",
-                            ASUS_SW_VER, evtlog_bootup_reason, evtlog_poweroff_reason);
+			sprintf(buffer, "\n\n---------------System Boot----%s---------\n"
+				"[Shutdown] Power off Reason: 0x%x => %s; (last time) ###### \n"
+				"###### Bootup Reason: %s ######\n",
+                                ASUS_SW_VER, (ASUSEvt_poweroff_reason < 0) ? 0 : 1 << ASUSEvt_poweroff_reason
+				, evtlog_poweroff_reason, evtlog_bootup_reason);
                 }
 
 		bootup = sys_write(g_hfileEvtlog, buffer, strlen(buffer));
@@ -172,6 +220,190 @@ void ASUSEvtlog(const char *fmt, ...)
 	}
 }
 EXPORT_SYMBOL(ASUSEvtlog);
+
+/*ASUS-BBSP SubSys Health Record+++*/
+static void do_write_subsys_worker(struct work_struct *work)
+{
+	int hfile = -MAX_ERRNO;
+
+	hfile = sys_open(SUBSYS_HEALTH_MEDICAL_TABLE_PATH".txt", O_CREAT|O_WRONLY|O_SYNC, 0444);
+	if(!IS_ERR((const void *)(ulong)hfile)) {
+		if (sys_lseek(hfile, 0, SEEK_END) >= SZ_128K) {
+			ASUSEvtlog("[SSR-Info] SubSys is versy ill\n");
+			sys_close(hfile);
+			sys_unlink(SUBSYS_HEALTH_MEDICAL_TABLE_PATH"_old.txt");
+			sys_rename(SUBSYS_HEALTH_MEDICAL_TABLE_PATH".txt", SUBSYS_HEALTH_MEDICAL_TABLE_PATH"_old.txt");
+			hfile = sys_open(SUBSYS_HEALTH_MEDICAL_TABLE_PATH".txt", O_CREAT|O_RDWR|O_SYNC, 0444);
+		}
+		sys_write(hfile, g_SubSys_W_Buf, strlen(g_SubSys_W_Buf));
+		sys_fsync(hfile);
+		sys_close(hfile);
+	} else {
+		ASUSEvtlog("[SSR-Info] Save SubSys Medical Table Error: [0x%x]\n", hfile);
+	}
+}
+
+static void do_count_subsys_worker(struct work_struct *work)
+{
+	int  hfile = -MAX_ERRNO;
+	char r_buf[SUBSYS_R_MAXLEN];
+	char r_buf2[SUBSYS_R_MAXLEN];
+	int  r_size = 0;
+	int  index = 0;
+	char keys[] = "[SSR]:";
+	char *pch;
+	char SubSysName[SUBSYS_NUM][10] = { "modem", "wcnss", "adsp", "venus" };
+	int  Counts[SUBSYS_NUM] = { 0 };/* MODEM, WCNSS, ADSP, OTHERS(VENUS) */
+
+	hfile = sys_open(SUBSYS_HEALTH_MEDICAL_TABLE_PATH".txt", O_CREAT|O_RDONLY|O_SYNC, 0444);
+	if(!IS_ERR((const void *)(ulong)hfile)) {
+		do {
+			memset(r_buf, 0, sizeof(r_buf));
+			r_size = sys_read(hfile, r_buf, sizeof(r_buf));
+			if (r_size != 0) {
+				/* count */
+				pch = strstr(r_buf, keys);
+				while (pch != NULL) {
+					pch = pch + strlen(keys);
+					for (index = 0 ; index < SUBSYS_NUM ; index++) {
+						if (!strncmp(pch, SubSysName[index], strlen(SubSysName[index]))) {
+							Counts[index]++;
+							break;
+						}
+					}
+					pch = strstr(pch, keys);
+				}
+			}
+		} while (r_size != 0);
+
+		sys_close(hfile);
+	}
+
+	hfile = sys_open(SUBSYS_HEALTH_MEDICAL_TABLE_PATH"_old.txt", O_RDONLY|O_SYNC, 0444);
+	if(!IS_ERR((const void *)(ulong)hfile)) {
+		do {
+			memset(r_buf, 0, sizeof(r_buf));
+			r_size = sys_read(hfile, r_buf, sizeof(r_buf));
+			if (r_size != 0) {
+				/* count */
+				pch = strstr(r_buf, keys);
+				while (pch != NULL) {
+					pch = pch + strlen(keys);
+					for (index = 0 ; index < SUBSYS_NUM ; index++) {
+						if (!strncmp(pch, SubSysName[index], strlen(SubSysName[index]))) {
+							Counts[index]++;
+							break;
+						}
+					}
+					pch = strstr(pch, keys);
+				}
+			}
+		} while (r_size != 0);
+
+		sys_close(hfile);
+	}
+
+        hfile = sys_open("/asdf/reboot_count", O_RDONLY|O_SYNC, 0);
+        memset(r_buf, 0, sizeof(r_buf));
+        if (!IS_ERR((const void *)(ulong)hfile)) {
+                sys_read(hfile, r_buf, sizeof(r_buf));
+                sys_close(hfile);
+        } else {
+                strcpy(r_buf, "0");
+        }
+
+	hfile = sys_open("/asdf/pwk_count", O_RDONLY|O_SYNC, 0);
+	memset(r_buf2, 0, sizeof(r_buf2));
+	if(!IS_ERR((const void *)(ulong)hfile)) {
+		sys_read(hfile, r_buf2, sizeof(r_buf2));
+		sys_close(hfile);
+	} else {
+		strcpy(r_buf2, "0");
+	}
+
+	sprintf(g_SubSys_C_Buf, "%s-%d-%d-%d-%d-%s", r_buf, Counts[0], Counts[1], Counts[2], Counts[3], r_buf2);/* MODEM, WCNSS, ADSP, OTHERS(VENUS), LONG PRESS PWK */
+	complete(&SubSys_C_Complete);
+}
+
+static void do_delete_subsys_worker(struct work_struct *work)
+{
+	sys_unlink(SUBSYS_HEALTH_MEDICAL_TABLE_PATH".txt");
+	sys_unlink(SUBSYS_HEALTH_MEDICAL_TABLE_PATH"_old.txt");
+        sys_unlink("/asdf/reboot_count");
+        sys_unlink("/asdf/normal_count");
+        sys_unlink("/asdf/total_count");
+	sys_unlink("/asdf/pwk_count");
+	ASUSEvtlog("[SSR-Info] SubSys Medical Table Deleted\n");
+}
+
+void SubSysHealthRecord(const char *fmt, ...)
+{
+	va_list args;
+	char *w_buf;
+	struct rtc_time tm;
+	struct timespec ts;
+
+	memset(g_SubSys_W_Buf, 0 , sizeof(g_SubSys_W_Buf));
+	w_buf = g_SubSys_W_Buf;
+
+	getnstimeofday(&ts);
+	ts.tv_sec -= sys_tz.tz_minuteswest * 60;
+	rtc_time_to_tm(ts.tv_sec, &tm);
+	sprintf(w_buf, "%04d-%02d-%02d %02d:%02d:%02d : ", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
+	va_start(args, fmt);
+	vscnprintf(w_buf + strlen(w_buf), sizeof(g_SubSys_W_Buf) - strlen(w_buf), fmt, args);
+	va_end(args);
+	/*printk("g_SubSys_W_Buf = %s", g_SubSys_W_Buf);*/
+
+	queue_work(ASUSEvtlog_workQueue, &subsys_w_Work);
+}
+EXPORT_SYMBOL(SubSysHealthRecord);
+
+static int SubSysHealth_proc_show(struct seq_file *m, void *v)
+{
+	unsigned long ret;
+
+	queue_work(ASUSEvtlog_workQueue, &subsys_c_Work);/* Issue to count */
+
+	ret = wait_for_completion_timeout(&SubSys_C_Complete, msecs_to_jiffies(1000));
+	if (!ret)
+		ASUSEvtlog("[SSR-Info] Timed out on query SubSys count\n");
+
+	seq_printf(m, "%s\n", g_SubSys_C_Buf);
+	return 0;
+}
+
+static int SubSysHealth_proc_open(struct inode *inode, struct  file *file)
+{
+	return single_open(file, SubSysHealth_proc_show, NULL);
+}
+
+static ssize_t SubSysHealth_proc_write(struct file *file, const char __user *buf, size_t count, loff_t *ppos)
+{
+	char keyword[] = "clear";
+	char tmpword[10];
+	memset(tmpword, 0, sizeof(tmpword));
+
+	/* no data be written Or Input size is too large to write our buffer */
+	if ((!count) || (count > (sizeof(tmpword) - 1)))
+		return -EINVAL;
+
+	if (copy_from_user(tmpword, buf, count))
+		return -EFAULT;
+
+	if (strncmp(tmpword, keyword, strlen(keyword)) == 0) {
+		queue_work(ASUSEvtlog_workQueue, &subsys_d_Work);
+	}
+
+	return count;
+}
+
+static const struct file_operations proc_SubSysHealth_operations = {
+	.open = SubSysHealth_proc_open,
+	.read = seq_read,
+	.write = SubSysHealth_proc_write,
+};
+/*ASUS-BBSP SubSys Health Record---*/
 
 static ssize_t evtlogswitch_write(struct file *file, const char __user *buf, size_t count, loff_t *ppos)
 {
@@ -311,6 +543,11 @@ static int __init proc_asusdebug_init(void)
 	proc_create("asusevtlog-switch", S_IRWXUGO, NULL, &proc_evtlogswitch_operations);
 	proc_create("JBStatus", S_IRUGO | S_IWUSR, NULL, &proc_JBStatus_operations);
 	mutex_init(&mA);
+
+	/*ASUS-BBSP SubSys Health Record+++*/
+	proc_create("SubSysHealth", S_IRWXUGO, NULL, &proc_SubSysHealth_operations);
+	init_completion(&SubSys_C_Complete);
+	/*ASUS-BBSP SubSys Health Record---*/
 
 	ASUSEvtlog_workQueue  = create_singlethread_workqueue("ASUSEVTLOG_WORKQUEUE");
 

@@ -2196,7 +2196,20 @@ void suspend_console(void)
 
 void resume_console(void)
 {
+	int i;
         ASUSEvtlog("[UTS] System Resume\n");
+	//[+++]Show GPIO, IRQ wakeup information in AsusEvtlog
+	if (pm_pwrcs_ret) {
+		if (gic_irq_cnt > 0) {
+			for (i = 0; i < gic_irq_cnt; i++) {
+				printk("Wakeup from IRQ %d\n", gic_resume_irq[i]);
+				ASUSEvtlog("[PM] IRQs triggered: %d", gic_resume_irq[i]);
+			}
+			gic_irq_cnt = 0;  //clear log count
+		}
+		pm_pwrcs_ret = 0;
+	}
+	//[---]Show GPIO,IRQ, SPMI wakeup information in AsusEvtlog
 	if (!console_suspend_enabled)
 		return;
 	down(&console_sem);

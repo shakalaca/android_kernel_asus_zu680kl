@@ -366,7 +366,8 @@ static void mdss_mdp_cmd_readptr_done(void *arg)
 		return;
 	}
 
-#ifdef CONFIG_PIXELWORKS_IRIS_SUPPORT
+/* IRIS test code */
+#ifdef CONFIG_PIXELWORKS_IRIS_SUPPORT_DEBUG
 	if (iris2_get_id() == 0x1)
 		iris_cmd_cadence_check(ctl);
 #endif

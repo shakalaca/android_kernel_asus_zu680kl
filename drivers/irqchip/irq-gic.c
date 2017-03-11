@@ -52,6 +52,7 @@
 
 #include "irqchip.h"
 
+int gic_irq_cnt, gic_resume_irq[8]; //[Power]Add these values to save IRQ's counts and number
 union gic_base {
 	void __iomem *common_base;
 	void __percpu __iomem **percpu_base;
@@ -319,6 +320,21 @@ EXPORT_SYMBOL(wcnss_irq_flag_function_wdi);
 
 //ASUS_BSP--- "for wlan wakeup trace"
 
+//ASUS_BSP +++ Johnny [Qcom][PS][][ADD]Print first IP address log when IRQ 57
+static int rmnet_irq_flag_rx = 0;
+int rmnet_irq_flag_function_rx(void)
+{
+    if( rmnet_irq_flag_rx == 1 ) {
+        rmnet_irq_flag_rx = 0;
+        return 1;
+    }
+
+    return 0;
+}
+EXPORT_SYMBOL(rmnet_irq_flag_function_rx);
+//ASUS_BSP --- Johnny [Qcom][PS][][ADD]Print first IP address log when IRQ 57
+
+
 uint32_t gic_return_irq_pending(void)
 {
 	struct gic_chip_data *gic = &gic_data[0];
@@ -336,6 +352,13 @@ static void gic_show_resume_irq(struct gic_chip_data *gic)
 	u32 enabled;
 	u32 pending[32];
 	void __iomem *base = gic_data_dist_base(gic);
+
+	//[+++][Power]reset IRQ count and IRQ number every time.
+	int j;
+	for (j = 0;j < 8; j++)
+		gic_resume_irq[j] = 0;
+	gic_irq_cnt = 0;
+	 //[---][Power]reset IRQ count and IRQ number every time.
 
 	if (!msm_show_resume_irq_mask)
 		return;
@@ -362,6 +385,12 @@ static void gic_show_resume_irq(struct gic_chip_data *gic)
 		pr_warning("%s: %d triggered %s\n", __func__,
 					i + gic->irq_offset, name);
 
+		//[+++][Power]save IRQ's counts and number
+		if (gic_irq_cnt < 8)
+			gic_resume_irq[gic_irq_cnt] = i + gic->irq_offset;
+		gic_irq_cnt++;
+		//[---][Power]save IRQ's counts and number
+
 		//ASUS_BSP+++ "for wlan wakeup trace"
 		if( (i + gic->irq_offset) == g_wcnss_wlanrx_irq ){
 		    wcnss_irq_flag_rx = 1;
@@ -369,7 +398,19 @@ static void gic_show_resume_irq(struct gic_chip_data *gic)
 		}
 		//ASUS_BSP--- "for wlan wakeup trace"
 
+                //ASUS_BSP +++ Johnny [Qcom][PS][][ADD]Print first IP address log when IRQ 57
+                if( (i + gic->irq_offset) == 260 ){
+                    rmnet_irq_flag_rx = 1;
+                    //printk("%s: [data] Johnny test\n", __func__);
+                }
+                //ASUS_BSP --- Johnny [Qcom][PS][][ADD]Print first IP address log when IRQ 57
+
+
 	}
+	//[+++][Power]Save maxmum count to 8
+	if (gic_irq_cnt >= 8)
+		gic_irq_cnt = 7;
+	//[---][Power]Save maxmum count to 8
 }
 
 static void gic_resume_one(struct gic_chip_data *gic)

@@ -234,8 +234,12 @@ static int dccp_v6_send_response(struct sock *sk, struct request_sock *req)
 	fl6.fl6_sport = inet_rsk(req)->loc_port;
 	security_req_classify_flow(req, flowi6_to_flowi(&fl6));
 
-
-	final_p = fl6_update_dst(&fl6, np->opt, &final);
+	//ASUS_BSP+++ "update for Google security patch (ANDROID-28746669)"
+	//final_p = fl6_update_dst(&fl6, np->opt, &final);
+	rcu_read_lock();
+	final_p = fl6_update_dst(&fl6, rcu_dereference(np->opt), &final);
+	rcu_read_unlock();
+	//ASUS_BSP--- "update for Google security patch (ANDROID-28746669)"
 
 	dst = ip6_dst_lookup_flow(sk, &fl6, final_p, false);
 	if (IS_ERR(dst)) {
@@ -252,7 +256,12 @@ static int dccp_v6_send_response(struct sock *sk, struct request_sock *req)
 							 &ireq6->loc_addr,
 							 &ireq6->rmt_addr);
 		fl6.daddr = ireq6->rmt_addr;
-		err = ip6_xmit(sk, skb, &fl6, np->opt, np->tclass);
+		//ASUS_BSP+++ "update for Google security patch (ANDROID-28746669)"
+		//err = ip6_xmit(sk, skb, &fl6, np->opt, np->tclass);
+		rcu_read_lock();
+		err = ip6_xmit(sk, skb, &fl6, rcu_dereference(np->opt), np->tclass);
+		rcu_read_unlock();
+		//ASUS_BSP--- "update for Google security patch (ANDROID-28746669)"		
 		err = net_xmit_eval(err);
 	}
 
@@ -361,6 +370,9 @@ static int dccp_v6_conn_request(struct sock *sk, struct sk_buff *skb)
 	struct dccp_request_sock *dreq;
 	struct inet6_request_sock *ireq6;
 	struct ipv6_pinfo *np = inet6_sk(sk);
+	//ASUS_BSP+++ "update for Google security patch (ANDROID-28746669)"
+	struct ipv6_txoptions *opt;
+	//ASUS_BSP--- "update for Google security patch (ANDROID-28746669)"
 	const __be32 service = dccp_hdr_request(skb)->dccph_req_service;
 	struct dccp_skb_cb *dcb = DCCP_SKB_CB(skb);
 
@@ -571,13 +583,24 @@ static struct sock *dccp_v6_request_recv_sock(struct sock *sk,
 	 * Yes, keeping reference count would be much more clever, but we make
 	 * one more one thing there: reattach optmem to newsk.
 	 */
-	if (np->opt != NULL)
-		newnp->opt = ipv6_dup_options(newsk, np->opt);
+	//ASUS_BSP+++ "update for Google security patch (ANDROID-28746669)"
+	//if (np->opt != NULL)
+	//	newnp->opt = ipv6_dup_options(newsk, np->opt);
+	opt = rcu_dereference(np->opt);
+	if (opt) {
+		opt = ipv6_dup_options(newsk, opt);
+		RCU_INIT_POINTER(newnp->opt, opt);
+	}
+	//ASUS_BSP--- "update for Google security patch (ANDROID-28746669)"	
 
 	inet_csk(newsk)->icsk_ext_hdr_len = 0;
-	if (newnp->opt != NULL)
-		inet_csk(newsk)->icsk_ext_hdr_len = (newnp->opt->opt_nflen +
-						     newnp->opt->opt_flen);
+	//ASUS_BSP+++ "update for Google security patch (ANDROID-28746669)"
+	//if (newnp->opt != NULL)
+	//	inet_csk(newsk)->icsk_ext_hdr_len = (newnp->opt->opt_nflen +
+	//					     newnp->opt->opt_flen);
+	if (opt)
+		inet_csk(newsk)->icsk_ext_hdr_len = opt->opt_nflen + opt->opt_flen;
+	//ASUS_BSP--- "update for Google security patch (ANDROID-28746669)"
 
 	dccp_sync_mss(newsk, dst_mtu(dst));
 
@@ -829,6 +852,9 @@ static int dccp_v6_connect(struct sock *sk, struct sockaddr *uaddr,
 	struct ipv6_pinfo *np = inet6_sk(sk);
 	struct dccp_sock *dp = dccp_sk(sk);
 	struct in6_addr *saddr = NULL, *final_p, final;
+	//ASUS_BSP+++ "update for Google security patch (ANDROID-28746669)"
+	struct ipv6_txoptions *opt;
+	//ASUS_BSP--- "update for Google security patch (ANDROID-28746669)"	
 	struct flowi6 fl6;
 	struct dst_entry *dst;
 	int addr_type;
@@ -931,7 +957,11 @@ static int dccp_v6_connect(struct sock *sk, struct sockaddr *uaddr,
 	fl6.fl6_sport = inet->inet_sport;
 	security_sk_classify_flow(sk, flowi6_to_flowi(&fl6));
 
-	final_p = fl6_update_dst(&fl6, np->opt, &final);
+	//ASUS_BSP+++ "update for Google security patch (ANDROID-28746669)"
+	//final_p = fl6_update_dst(&fl6, np->opt, &final);
+	opt = rcu_dereference_protected(np->opt, sock_owned_by_user(sk));
+	final_p = fl6_update_dst(&fl6, opt, &final);
+	//ASUS_BSP--- "update for Google security patch (ANDROID-28746669)"
 
 	dst = ip6_dst_lookup_flow(sk, &fl6, final_p, true);
 	if (IS_ERR(dst)) {
@@ -951,9 +981,14 @@ static int dccp_v6_connect(struct sock *sk, struct sockaddr *uaddr,
 	__ip6_dst_store(sk, dst, NULL, NULL);
 
 	icsk->icsk_ext_hdr_len = 0;
-	if (np->opt != NULL)
-		icsk->icsk_ext_hdr_len = (np->opt->opt_flen +
-					  np->opt->opt_nflen);
+	//ASUS_BSP+++ "update for Google security patch (ANDROID-28746669)"	
+	//if (np->opt != NULL)
+	//	icsk->icsk_ext_hdr_len = (np->opt->opt_flen +
+	//				  np->opt->opt_nflen);
+	if (opt)
+		icsk->icsk_ext_hdr_len = opt->opt_flen + opt->opt_nflen;
+	//ASUS_BSP--- "update for Google security patch (ANDROID-28746669)"
+
 
 	inet->inet_dport = usin->sin6_port;
 

@@ -122,7 +122,7 @@ static int rfb_delay;
 static int frc_delay;
 static int prep_delay;
 /* debug usb workaround */
-static bool debug_usb_w_enabled = 1;
+static bool debug_usb_w_enabled = 0; //disable, use ot_lim to instead
 static bool usb_w_enabled_by_configure = 0;
 
 static bool debug_clock_gate = 1;
@@ -5600,6 +5600,116 @@ SET_REG:
 	iris_cfg->val_frcc_reg17 = val_frcc_reg17;
 	return 0;
 }
+
+#ifdef ENABLE_TCON_CABC
+static u8 mipitx_write_brightness[80] = {
+	PWIL_TAG('P', 'W', 'I', 'L'),
+	PWIL_TAG('G', 'R', 'C', 'P'),
+	PWIL_U32(0x11),
+	0x00,
+	0x00,
+	PWIL_U16(0x10),
+	PWIL_U32(IRIS_MIPI_TX_ADDR+0x1c014),
+	PWIL_U32(0x00ff0000),
+	PWIL_U32(IRIS_MIPI_TX_ADDR+0x1c010),
+	PWIL_U32(0x00008001),
+	PWIL_U32(IRIS_MIPI_TX_ADDR+0x1c018),
+	PWIL_U32(0x00000010),
+	PWIL_U32(IRIS_MIPI_TX_ADDR+0x1c020),
+	PWIL_U32(0x00000000),
+	PWIL_U32(IRIS_MIPI_TX_ADDR+0x1c014),
+	PWIL_U32(0x00510000),
+	PWIL_U32(IRIS_MIPI_TX_ADDR+0x1c010),
+	PWIL_U32(0x00008001),
+	PWIL_U32(IRIS_MIPI_TX_ADDR+0x1c018),
+	PWIL_U32(0x00000000),
+	PWIL_U32(IRIS_MIPI_TX_ADDR+0x1c020),
+	PWIL_U32(0x00000001),
+};
+
+static struct dsi_cmd_desc mipitx_write_cmds[] = {
+	{ { DTYPE_GEN_LWRITE, 1, 0, 0, 0,
+		sizeof(mipitx_write_brightness) }, mipitx_write_brightness},
+};
+
+void iris_tcon_cabc_configure(struct mdss_dsi_ctrl_pdata *ctrl, u8 brightness)
+{
+	struct iris_config *iris_cfg = &g_mfd->iris_conf;
+	struct dcs_cmd_req cmdreq;
+
+	if (!iris_cfg->ready)
+		return;
+
+	mipitx_write_brightness[68] = brightness & 0xff;
+
+	printk("brightness is set as %d \n",brightness);
+
+	cmdreq.cmds = mipitx_write_cmds;
+	cmdreq.cmds_cnt = 1;
+	cmdreq.flags = CMD_REQ_HS_MODE | CMD_REQ_COMMIT | CMD_CLK_CTRL;
+	cmdreq.rlen = 0;
+	cmdreq.cb = NULL;
+	mdss_dsi_cmdlist_put(ctrl, &cmdreq);
+}
+
+static u8 mipitx_write_tcon_onoff[80] = {
+	PWIL_TAG('P', 'W', 'I', 'L'),
+	PWIL_TAG('G', 'R', 'C', 'P'),
+	PWIL_U32(0x11),
+	0x00,
+	0x00,
+	PWIL_U16(0x10),
+	PWIL_U32(IRIS_MIPI_TX_ADDR+0x1c014),
+	PWIL_U32(0x00ff0000),
+	PWIL_U32(IRIS_MIPI_TX_ADDR+0x1c010),
+	PWIL_U32(0x00008001),
+	PWIL_U32(IRIS_MIPI_TX_ADDR+0x1c018),
+	PWIL_U32(0x00000010),
+	PWIL_U32(IRIS_MIPI_TX_ADDR+0x1c020),
+	PWIL_U32(0x00000000),
+	PWIL_U32(IRIS_MIPI_TX_ADDR+0x1c014),
+	PWIL_U32(0x00550000),
+	PWIL_U32(IRIS_MIPI_TX_ADDR+0x1c010),
+	PWIL_U32(0x00008001),
+	PWIL_U32(IRIS_MIPI_TX_ADDR+0x1c018),
+	PWIL_U32(0x00000000),
+	PWIL_U32(IRIS_MIPI_TX_ADDR+0x1c020),
+	PWIL_U32(0x00000001),
+};
+
+void iris_tcon_cabc_on_off(u8 addr, u8 value)
+{
+	struct iris_config *iris_cfg = &g_mfd->iris_conf;
+	struct dcs_cmd_req cmdreq;
+
+	struct mdss_overlay_private *mdp5_data = mfd_to_mdp5_data(g_mfd);
+	struct mdss_dsi_ctrl_pdata *ctrl;
+
+	struct dsi_cmd_desc mipitx_write_cmds[] = {
+		{ { DTYPE_GEN_LWRITE, 1, 0, 0, 0,
+			sizeof(mipitx_write_tcon_onoff) }, mipitx_write_tcon_onoff},
+	};
+
+	if (!iris_cfg->ready)
+		return;
+	ctrl = container_of(mdp5_data->ctl->panel_data, struct mdss_dsi_ctrl_pdata, panel_data);
+
+	mipitx_write_tcon_onoff[54] = addr & 0xff;
+	mipitx_write_tcon_onoff[68] = value & 0xff;
+
+	printk("iris_tcon_cabc_on_off add=0x%x value=0x%x \n", (unsigned int)addr, (unsigned int)value);
+
+	cmdreq.cmds = mipitx_write_cmds;
+	cmdreq.cmds_cnt = 1;
+	cmdreq.flags = CMD_REQ_HS_MODE | CMD_REQ_COMMIT | CMD_CLK_CTRL;
+	cmdreq.rlen = 0;
+	cmdreq.cb = NULL;
+	mdss_dsi_cmdlist_put(ctrl, &cmdreq);
+
+}
+EXPORT_SYMBOL(iris_tcon_cabc_on_off);
+#endif
+
 
 static ssize_t iris_dbg_fw_write(struct file *file, const char __user *buff,
 	size_t count, loff_t *ppos)

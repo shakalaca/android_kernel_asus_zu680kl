@@ -34,6 +34,9 @@ DEFINE_MSM_MUTEX(msm_actuator_mutex);
 #define PARK_LENS_SMALL_STEP 3
 #define MAX_QVALUE 4096
 
+static uint16_t actuator_data_Z1 = 0;
+static uint16_t actuator_data_Z2 = 0;
+static uint16_t actuator_data_Z1_minus_Xum = 0;
 static int vcm_z1z2_once;
 static int16_t g_vcm_position;
 static struct v4l2_file_operations msm_actuator_v4l2_subdev_fops;
@@ -44,6 +47,140 @@ static struct msm_actuator msm_vcm_actuator_table;
 static struct msm_actuator msm_piezo_actuator_table;
 static struct msm_actuator msm_hvcm_actuator_table;
 static struct msm_actuator msm_bivcm_actuator_table;
+
+#define DBG_TXT_BUF_SIZE 256
+static int vcm_threshold_um = 0;
+#define VCM_THRESHOLD_RW_PROC_FILE "driver/vcm_threshold"
+#define VCM_SERVO_OFF_PROC_FILE      "driver/vcm_servo_off"
+#define SERVO_OFF_COUNT 3
+#define SERVO_ON SERVO_OFF_COUNT+1
+static int vcm_servo_status = SERVO_ON;	/* 4: servo on, 0~3:server off */
+static uint16_t vcm_data_g = 0xA000;
+static struct task_struct *brook_tsk;
+static int kbrook(void *arg)
+{
+	uint16_t vcm_data = 0;
+	uint8_t read_data[32] = {0};
+	unsigned int timeout;
+	uint8_t reg_vcm_pos_read[2] = {0x72, 0x3C};
+	uint8_t reg_servo_on[3] = {0x72, 0x87, 0x9D};
+#if 1
+	uint8_t reg_servo_off[3] = {0x72, 0x87, 0x1D};
+	uint8_t reg_vcm_current_0[4] = {0x72, 0x02, 0x00, 0x00};
+#endif
+	uint8_t reg_vcm_pos_set_0[4] = {0x72, 0xA0, 0x00, 0x00};
+
+	/* this thread is checking if vcm posiztion under Z1-20um. if yes, set vcm servo off to reduce vcm noise */
+	for(;;) {
+		if (kthread_should_stop()) break;
+
+		mutex_lock(&msm_actuator_mutex);
+		read_data[0] = 0;
+		read_data[1] = 0;
+		i2c_read_thu_imx318(reg_vcm_pos_read, 2, read_data, 2);
+		vcm_data = (read_data[0] << 8) | read_data[1];
+		vcm_data = ((vcm_data + 0x8000)&0xffff) >> 4;
+
+		pr_debug("[vcm] z1:%u z2:%u z1-Xum:%u cur_position %u vcm_servo_status %d \n", actuator_data_Z1, actuator_data_Z2, actuator_data_Z1_minus_Xum, vcm_data, vcm_servo_status);
+		if (vcm_data >= actuator_data_Z1_minus_Xum && vcm_servo_status < SERVO_OFF_COUNT) {
+			vcm_servo_status = vcm_servo_status + 1;
+		} else if (vcm_data < actuator_data_Z1_minus_Xum && vcm_servo_status < SERVO_OFF_COUNT) {
+			vcm_servo_status = 0;
+		} else if (vcm_data >= actuator_data_Z1 && vcm_servo_status == SERVO_OFF_COUNT) {
+			pr_err("[vcm] servo on, z1:%u z2:%u cur_position %u then set to %u\n",actuator_data_Z1, actuator_data_Z2, vcm_data, vcm_data_g>>4);
+			reg_vcm_pos_set_0[2] = (vcm_data_g & 0xFF00) >> 8;
+			reg_vcm_pos_set_0[3] = vcm_data_g & 0x00FF;
+			i2c_write_thu_imx318(reg_servo_on, 3);
+			i2c_write_thu_imx318(reg_vcm_pos_set_0, 4);
+			vcm_servo_status = SERVO_ON;
+#if 1
+		} else if (vcm_data < actuator_data_Z1_minus_Xum && vcm_servo_status == SERVO_ON){
+			pr_err("[vcm] servo off, z1:%u z2:%u Z1-Xum:%u cur_position %u \n", actuator_data_Z1, actuator_data_Z2, actuator_data_Z1_minus_Xum, vcm_data);
+			vcm_servo_status = 0;
+			i2c_write_thu_imx318(reg_servo_off, 3);
+			i2c_write_thu_imx318(reg_vcm_current_0, 4);
+#endif
+		}
+
+		mutex_unlock(&msm_actuator_mutex);
+		do {
+			set_current_state(TASK_INTERRUPTIBLE);
+			timeout = schedule_timeout(HZ/10);
+		} while(timeout);
+	}
+	brook_tsk = NULL;
+	return 0;
+}
+
+static int ATD_vcm_servo_off_proc_read(struct seq_file *buf, void *v)
+{
+	uint8_t reg_servo_off[3] = {0x72, 0x87, 0x1D};
+	uint8_t reg_vcm_current_0[4] = {0x72, 0x02, 0x00, 0x00};
+
+	mutex_lock(&msm_actuator_mutex);
+	if (vcm_servo_status == SERVO_ON){
+		pr_err("[vcm] servo off by G sensor \n");
+		vcm_servo_status = 0;
+		i2c_write_thu_imx318(reg_servo_off, 3);
+		i2c_write_thu_imx318(reg_vcm_current_0, 4);
+	}
+	mutex_unlock(&msm_actuator_mutex);
+	seq_printf(buf, "[vcm] servo off\n");
+
+	return 0;
+}
+
+static int ATD_vcm_servo_off_proc_open(struct inode *inode, struct  file *file)
+{
+	return single_open(file, ATD_vcm_servo_off_proc_read, NULL);
+}
+
+static const struct file_operations ATD_vcm_servo_off_fops = {
+    .owner = THIS_MODULE,
+    .open = ATD_vcm_servo_off_proc_open,
+    .read = seq_read,
+    .llseek = seq_lseek,
+    .release = single_release,
+};
+
+static int vcm_threshold_rw_proc_read(struct seq_file *buf, void *v)
+{
+	seq_printf(buf, "%d\n", vcm_threshold_um);
+	return 0;
+}
+
+static ssize_t vcm_threshold_rw_proc_write(struct file *dev, const char *buf, size_t count, loff_t *ppos)
+{
+	int value = -1;
+	int len;
+	char debugTxtBuf[DBG_TXT_BUF_SIZE];
+
+	len = (count > DBG_TXT_BUF_SIZE - 1) ? (DBG_TXT_BUF_SIZE-1) : (count);
+	if (copy_from_user(debugTxtBuf, buf, len))
+		return -EFAULT;
+	debugTxtBuf[len]=0; //add string end
+	sscanf(debugTxtBuf, "%d", &value);
+	*ppos=len;
+
+	vcm_threshold_um = value;
+	actuator_data_Z1_minus_Xum = actuator_data_Z1 - ((actuator_data_Z2 - actuator_data_Z1)*vcm_threshold_um/300);
+
+	return len;
+}
+
+static int vcm_threshold_rw_proc_open(struct inode *inode, struct  file *file)
+{
+	return single_open(file, vcm_threshold_rw_proc_read, NULL);
+}
+
+static const struct file_operations vcm_threshold_rw_proc_fops = {
+	.owner = THIS_MODULE,
+	.open = vcm_threshold_rw_proc_open,
+	.read = seq_read,
+	.llseek = seq_lseek,
+	.release = single_release,
+	.write = vcm_threshold_rw_proc_write,
+};
 
 static struct i2c_driver msm_actuator_i2c_driver;
 static struct msm_actuator *actuators[] = {
@@ -192,12 +329,16 @@ static int msm_actuator_bivcm_handle_i2c_ops(
 
 			reg_setting.reg_setting = &i2c_tbl;
 			reg_setting.data_type = a_ctrl->i2c_data_type;
-			rc = a_ctrl->i2c_client.
-				i2c_func_tbl->i2c_write_table_w_microdelay(
-				&a_ctrl->i2c_client, &reg_setting);
-			if (rc < 0) {
-				pr_err("i2c write error:%d\n", rc);
-				return rc;
+			if (vcm_servo_status == SERVO_ON){
+				vcm_data_g = value;
+				pr_debug("[vcm] next_lens_position=%d, vcm_data_g=%u set pos to %u\n", next_lens_position, vcm_data_g, vcm_data_g>>4);
+				rc = a_ctrl->i2c_client.
+					i2c_func_tbl->i2c_write_table_w_microdelay(
+					&a_ctrl->i2c_client, &reg_setting);
+				if (rc < 0) {
+					pr_err("i2c write error:%d\n", rc);
+					return rc;
+				}
 			}
 			break;
 		case MSM_ACTUATOR_WRITE:
@@ -856,7 +997,7 @@ static int32_t msm_actuator_bivcm_init_step_table(
 	int16_t code_per_step = 0;
 	int16_t cur_code = 0;
 	int16_t cur_code_se = 0;
-	int16_t step_index = 0, region_index = 0;
+	uint16_t step_index = 0, region_index = 0;
 	uint16_t step_boundary = 0;
 	uint32_t max_code_size = 1;
 	uint16_t data_size = set_info->actuator_params.data_size;
@@ -900,6 +1041,15 @@ static int32_t msm_actuator_bivcm_init_step_table(
 		step_boundary =
 			a_ctrl->region_params[region_index].
 			step_bound[MOVE_NEAR];
+		if (step_boundary >
+			set_info->af_tuning_params.total_steps) {
+			pr_err("invalid step_boundary = %d, max_val = %d",
+				step_boundary,
+				set_info->af_tuning_params.total_steps);
+			kfree(a_ctrl->step_position_table);
+			a_ctrl->step_position_table = NULL;
+			return -EINVAL;
+		}
 		qvalue = a_ctrl->region_params[region_index].qvalue;
 		for (; step_index <= step_boundary;
 			step_index++) {
@@ -937,20 +1087,25 @@ static int32_t msm_actuator_init_step_table(struct msm_actuator_ctrl_t *a_ctrl,
 	int16_t code_per_step = 0;
 	uint32_t qvalue = 0;
 	int16_t cur_code = 0;
-	int16_t step_index = 0, region_index = 0;
+	uint16_t step_index = 0, region_index = 0;
 	uint16_t step_boundary = 0;
 	uint32_t max_code_size = 1;
 	uint16_t data_size = set_info->actuator_params.data_size;
 	CDBG("Enter\n");
 
+	/* validate the actuator state */
+	if (a_ctrl->actuator_state != ACT_OPS_ACTIVE) {
+		pr_err("%s:%d invalid actuator_state %d\n"
+			, __func__, __LINE__, a_ctrl->actuator_state);
+		return -EINVAL;
+	}
 	for (; data_size > 0; data_size--)
 		max_code_size *= 2;
 
 	a_ctrl->max_code_size = max_code_size;
-	if ((a_ctrl->actuator_state == ACT_OPS_ACTIVE) &&
-		(a_ctrl->step_position_table != NULL)) {
-		kfree(a_ctrl->step_position_table);
-	}
+
+	/* free the step_position_table to allocate a new one */
+	kfree(a_ctrl->step_position_table);
 	a_ctrl->step_position_table = NULL;
 
 	if (set_info->af_tuning_params.total_steps
@@ -979,6 +1134,15 @@ static int32_t msm_actuator_init_step_table(struct msm_actuator_ctrl_t *a_ctrl,
 		step_boundary =
 			a_ctrl->region_params[region_index].
 			step_bound[MOVE_NEAR];
+		if (step_boundary >
+			set_info->af_tuning_params.total_steps) {
+			pr_err("invalid step_boundary = %d, max_val = %d",
+				step_boundary,
+				set_info->af_tuning_params.total_steps);
+			kfree(a_ctrl->step_position_table);
+			a_ctrl->step_position_table = NULL;
+			return -EINVAL;
+		}
 		for (; step_index <= step_boundary;
 			step_index++) {
 			if (qvalue > 1 && qvalue <= MAX_QVALUE)
@@ -1057,6 +1221,11 @@ static int32_t msm_actuator_power_down(struct msm_actuator_ctrl_t *a_ctrl)
 {
 	int32_t rc = 0;
 	CDBG("Enter\n");
+	if (brook_tsk){
+		kthread_stop(brook_tsk);
+		brook_tsk = NULL;
+	}
+
 	if (a_ctrl->actuator_state != ACT_DISABLE_STATE) {
 
 		if (a_ctrl->func_tbl && a_ctrl->func_tbl->actuator_park_lens) {
@@ -1351,9 +1520,22 @@ static int msm_actuator_init(struct msm_actuator_ctrl_t *a_ctrl)
 		return -EINVAL;
 	}
 	if (!vcm_z1z2_once) {
-		vcm_Z1_Z2_read();
+		vcm_Z1_Z2_read(&actuator_data_Z1, &actuator_data_Z2);
 		vcm_z1z2_once = 1;
+		actuator_data_Z1_minus_Xum = actuator_data_Z1 - ((actuator_data_Z2 - actuator_data_Z1)*30/300);
 	}
+#if 1
+	/* create thread for monitor vcm position if under Z1-20um */
+	if (brook_tsk == NULL) {
+		brook_tsk = kthread_create(kbrook, NULL, "brook");
+		if (IS_ERR(brook_tsk)) {
+			brook_tsk = NULL;
+		} else {
+			wake_up_process(brook_tsk);
+		}
+	}
+#endif
+
 	if (a_ctrl->act_device_type == MSM_CAMERA_PLATFORM_DEVICE) {
 		rc = a_ctrl->i2c_client.i2c_func_tbl->i2c_util(
 			&a_ctrl->i2c_client, MSM_CCI_INIT);
@@ -1945,6 +2127,8 @@ static int32_t msm_actuator_platform_probe(struct platform_device *pdev)
 		&msm_actuator_v4l2_subdev_fops;
 
 	proc_create(REAR_VCM_PROC_FILE, 0664, NULL, &rear_vcm_proc_fops);
+	proc_create(VCM_SERVO_OFF_PROC_FILE, 0664, NULL, &ATD_vcm_servo_off_fops);
+	proc_create(VCM_THRESHOLD_RW_PROC_FILE, 0666, NULL, &vcm_threshold_rw_proc_fops);
 
 	CDBG("Exit\n");
 	return rc;

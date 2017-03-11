@@ -21,6 +21,30 @@
 #include <linux/usb/composite.h>
 #include <asm/unaligned.h>
 
+static bool detectMACByConfig = 0;
+static bool hostTypeChanged = 0;
+static bool detectHostFinished = 0;
+
+extern int getMACConnect(void){
+	return detectMACByConfig;
+}
+
+extern int getHostTypeChanged(void){
+	return hostTypeChanged;
+}
+
+extern int getDetectHostFinished(void) {
+	return detectHostFinished;
+}
+	
+extern void resetHostTypeChanged(void){
+	hostTypeChanged = 0;
+}
+
+extern void resetDetectHostFinished(void) {
+	detectHostFinished = 0;
+}
+
 /*
  * The code in this file is utility code, used to build a gadget driver
  * from one or more "function" drivers, one or more "configuration"
@@ -428,7 +452,7 @@ static int config_buf(struct usb_configuration *config,
 	c->bLength = USB_DT_CONFIG_SIZE;
 	c->bDescriptorType = type;
 	/* wTotalLength is written later */
-	c->bNumInterfaces = config->next_interface_id;
+	c->bNumInterfaces = config->next_interface_id - detectMACByConfig;
 	c->bConfigurationValue = config->bConfigurationValue;
 	c->iConfiguration = config->iConfiguration;
 	c->bmAttributes = USB_CONFIG_ATT_ONE | config->bmAttributes;
@@ -461,6 +485,12 @@ static int config_buf(struct usb_configuration *config,
 
 		if (!descriptors)
 			continue;
+
+		if (detectMACByConfig && !strcmp(f->name,"Mass Storage Function")){
+			printk("[USB] ingore mass storage\n");
+			continue;
+		}
+
 		status = usb_descriptor_fillbuf(next, len,
 			(const struct usb_descriptor_header **) descriptors);
 		if (status < 0)
@@ -706,6 +736,9 @@ static int set_config(struct usb_composite_dev *cdev,
 	INFO(cdev, "%s config #%d: %s\n",
 	     usb_speed_string(gadget->speed),
 	     number, c ? c->label : "unconfigured");
+
+	printk("[USB] speed:%d\n",gadget->speed);
+	ASUSEvtlog("[USB] speed:%d\n",gadget->speed);
 
 	if (!c)
 		goto done;
@@ -1344,6 +1377,13 @@ composite_setup(struct usb_gadget *gadget, const struct usb_ctrlrequest *ctrl)
 		switch (w_value >> 8) {
 
 		case USB_DT_DEVICE:
+			if ((w_length == 0x40) && (!detectHostFinished)) {
+				if(detectMACByConfig == 1){
+					hostTypeChanged = 1;
+				}
+				detectMACByConfig = 0;
+				detectHostFinished = 1;
+			}
 			cdev->desc.bNumConfigurations =
 				count_configs(cdev, USB_DT_DEVICE);
 			cdev->desc.bMaxPacketSize0 =
@@ -1377,6 +1417,13 @@ composite_setup(struct usb_gadget *gadget, const struct usb_ctrlrequest *ctrl)
 				break;
 			/* FALLTHROUGH */
 		case USB_DT_CONFIG:
+			if ((w_length == 0x4) && (!detectHostFinished)) {
+				if(detectMACByConfig == 0){
+					hostTypeChanged = 1;
+				}
+				detectMACByConfig = 1;
+				detectHostFinished = 1;
+			}
 			value = config_desc(cdev, w_value);
 			if (value >= 0)
 				value = min(w_length, (u16) value);
@@ -1393,6 +1440,13 @@ composite_setup(struct usb_gadget *gadget, const struct usb_ctrlrequest *ctrl)
 						USB_DT_OTG);
 			break;
 		case USB_DT_STRING:
+			if ((w_length == 0x2) && (!detectHostFinished)) {
+				if (detectMACByConfig == 0) {
+					hostTypeChanged = 1;
+				}
+				detectMACByConfig = 1;
+				detectHostFinished = 1;
+			}
 			value = get_string(cdev, req->buf,
 					w_index, w_value & 0xff);
 			if (value >= 0)

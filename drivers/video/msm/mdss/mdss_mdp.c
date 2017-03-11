@@ -3630,9 +3630,13 @@ static void apply_dynamic_ot_limit(u32 *ot_lim,
 
 	switch (mdata->mdp_rev) {
 	case MDSS_MDP_HW_REV_111:
-		if ((res <= FHD_RES) && params->frame_rate <= 30)
-			*ot_lim = 2;
-		else if (params->is_rot && params->is_yuv)
+		if ((res <= FHD_RES) && params->frame_rate <= 30) {
+			//set ot_lim as 6 for 1080p pattern to reduce the rotator cost.
+			if (res == 1920*1080 && params->is_rot && params->is_yuv)
+				*ot_lim = 6;
+			else
+				*ot_lim = 2;
+		} else if (params->is_rot && params->is_yuv)
 			*ot_lim = 4;
 		else
 			*ot_lim = 6;

@@ -222,11 +222,10 @@ static int iris2_io_probe(struct platform_device *pdev)
 	else
 		printk("[DISPLAY] snoc_clk != NULL\n");
 
+	iris2_io_bbclk_enable(1);
+
 	if(iris2_get_chip_version()==IRIS2_26){
 		iris2_io_bbclk_enable(0);
-	}
-	else{
-		iris2_io_bbclk_enable(1);
 	}
 
 	return 0;

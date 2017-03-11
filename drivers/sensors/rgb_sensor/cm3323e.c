@@ -65,7 +65,6 @@
 #define RGB_INDEX_W 3
 
 #define RGB_SENSOR_FILE		"/factory/rgbSensor_data"
-extern int g_ftm_mode;
 
 static struct mutex als_enable_mutex;
 struct msm_rgb_sensor_vreg {
@@ -301,10 +300,7 @@ static void rgbSensor_setDelay(void)
 	g_rgb_status.need_wait = true;
 	g_rgb_status.start_time_jiffies = jiffies;
 	if (cm_lp_info->it_time >= 0 && cm_lp_info->it_time <= 5) {
-		if (g_ftm_mode)
-			g_rgb_status.delay_time_ms = (40 << cm_lp_info->it_time) * 2;
-		else
-			g_rgb_status.delay_time_ms = (40 << cm_lp_info->it_time) * 5 / 4;
+		g_rgb_status.delay_time_ms = (40 << cm_lp_info->it_time) * 5 / 4;
 		RGB_DBG("%s: set delay time to %d ms\n", __func__, g_rgb_status.delay_time_ms);
 	} else{
 		g_rgb_status.delay_time_ms = 200;
@@ -327,12 +323,6 @@ static int rgbSensor_doEnable(bool enabled)
 		rgbSensor_setDelay();
 	} else{
 		cm_lp_info->als_enable = 0;
-		if (g_ftm_mode) {
-			/* Rgb sensor would use last time IT to read first data and then use current IT to read data afterwards */
-			/* so set IT to minimum 40ms when closing rgb sensor */
-			cm_lp_info->it_time = 0;
-			l_it_time = cm_lp_info->it_time << 4;
-		}
 		ret = _cm3323e_I2C_Write_Word(CM3323E_ADDR, CM3323E_CONF, l_it_time | CM3323E_CONF_SD);
 		als_power(0);
 	}
@@ -561,8 +551,6 @@ static void rgbSensor_itSet_ms(int input_ms)
 	cm_lp_info->it_time = it_time;
 	if (cm_lp_info->als_enable == 1) {
 		_cm3323e_I2C_Mask_Write_Word(CM3323E_ADDR, CM3323E_CONF, CFG_IT_MASK, it_time << 4);
-		if (g_ftm_mode)
-			rgbSensor_setDelay();
 	} else{
 		RGB_DBG("%s: write config - it time = %d, it set = %d\n", __func__, input_ms, it_time);
 	}

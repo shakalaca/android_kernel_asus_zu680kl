@@ -2613,6 +2613,7 @@ static enum power_supply_property fg_power_props[] = {
 	POWER_SUPPLY_PROP_VOLTAGE_MIN,
 	POWER_SUPPLY_PROP_CYCLE_COUNT,
 	POWER_SUPPLY_PROP_CYCLE_COUNT_ID,
+	POWER_SUPPLY_PROP_CSC_BATTERY_SOH,
 };
 
 static int fg_power_get_property(struct power_supply *psy,
@@ -2693,6 +2694,9 @@ static int fg_power_get_property(struct power_supply *psy,
 		break;
 	case POWER_SUPPLY_PROP_CHARGE_NOW_RAW:
 		val->intval = get_sram_prop_now(chip, FG_DATA_CC_CHARGE);
+		break;
+	case POWER_SUPPLY_PROP_CSC_BATTERY_SOH:
+		val->intval = 1;
 		break;
 	default:
 		return -EINVAL;

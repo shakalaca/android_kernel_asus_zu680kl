@@ -310,6 +310,7 @@ static void msm_restart_prepare(const char *cmd)
 
 	if (in_panic) {
 		__raw_writel(0x77665507, restart_reason);
+		ASUSEvtlog("[Reboot] Kernel panic\n");
 	}
 
 	flush_cache_all();

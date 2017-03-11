@@ -57,6 +57,7 @@
 #define QPNP_PON_WARM_RESET_REASON1(base)	(base + 0xA)
 #define QPNP_PON_WARM_RESET_REASON2(base)	(base + 0xB)
 #define QPNP_POFF_REASON1(base)			(base + 0xC)
+#define QPNP_POFF_REASON2(base)                 (base + 0xD)
 #define QPNP_PON_KPDPWR_S1_TIMER(base)		(base + 0x40)
 #define QPNP_PON_KPDPWR_S2_TIMER(base)		(base + 0x41)
 #define QPNP_PON_KPDPWR_S2_CNTL(base)		(base + 0x42)
@@ -1748,7 +1749,7 @@ static int qpnp_pon_probe(struct spmi_device *spmi)
 	u8 pon_sts = 0, buf[2];
 	u16 poff_sts = 0;
 	const char *s3_src;
-	u8 s3_src_reg;
+	u8 s3_src_reg, clr_poff;
 
 	pon = devm_kzalloc(&spmi->dev, sizeof(struct qpnp_pon),
 							GFP_KERNEL);
@@ -1856,14 +1857,28 @@ static int qpnp_pon_probe(struct spmi_device *spmi)
 		dev_info(&pon->spmi->dev,
 				"PMIC@SID%d: Unknown power-off reason\n",
 				pon->spmi->sid);
-		ASUSEvt_poweroff_reason = -1;
+		if (pon->spmi->sid == 0)
+			ASUSEvt_poweroff_reason = -1;
 	} else {
 		pon->pon_power_off_reason = index;
 		dev_info(&pon->spmi->dev,
 				"PMIC@SID%d: Power-off reason: %s\n",
 				pon->spmi->sid,
 				qpnp_poff_reason[index]);
-		ASUSEvt_poweroff_reason = index;
+		if (pon->spmi->sid == 0) {
+			ASUSEvt_poweroff_reason = index;
+			clr_poff = 0;
+			rc = spmi_ext_register_writel(pon->spmi->ctrl, pon->spmi->sid,
+				QPNP_POFF_REASON1(pon->base), &clr_poff, 1);
+			if (rc)
+				dev_err(&pon->spmi->dev,
+					"Unable to clear to QPNP_POFF_REASON1, rc(%d)\n", rc);
+			rc = spmi_ext_register_writel(pon->spmi->ctrl, pon->spmi->sid,
+                                QPNP_POFF_REASON2(pon->base), &clr_poff, 1);
+                        if (rc)
+                                dev_err(&pon->spmi->dev,
+                                        "Unable to clear to QPNP_POFF_REASON2, rc(%d)\n", rc);
+		}
 	}
 
 	if (pon->pon_trigger_reason == PON_SMPL ||

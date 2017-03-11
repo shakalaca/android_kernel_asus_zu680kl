@@ -79,6 +79,7 @@ struct vfs_platform_dev_data {
 	int vcc_1v8;
 
 	int gpio_irq;
+	int wakeup_source;
 	int user_pid;
 	int signal_id;
 	unsigned int drdy_enabled;
@@ -737,6 +738,22 @@ static ssize_t show_name(struct device *dev,
 
 static DEVICE_ATTR(name, S_IRUGO, show_name, NULL);
 
+static ssize_t vfs_platform_wakeup_store(struct device *dev,
+			       struct device_attribute *attr,
+			       const char *buf, size_t count) {
+	struct vfs_platform_dev_data *vfs_platform_dev = dev_get_drvdata(dev);
+	long wakeup;
+
+	wakeup = !strcmp(buf, "true");
+	if (vfs_platform_dev->wakeup_source != wakeup) {
+		irq_set_irq_wake(vfs_platform_dev->gpio_irq, wakeup);
+		vfs_platform_dev->wakeup_source = wakeup;
+		pr_info("%s: wakeup %ld\n", __func__, wakeup);
+	}
+	return count;
+}
+
+static DEVICE_ATTR(wakeup, S_IWUSR, NULL, vfs_platform_wakeup_store);
 
 int vfs_platform_open(struct inode *inode, struct file *filp)
 {
@@ -821,6 +838,12 @@ int vfs_platform_probe(struct platform_device *pdev)
 			&dev_attr_name);
 	if (status != 0)
 		pr_warn("Failed to crate name %d\n", status);
+
+	status = device_create_file(&(pdev->dev),
+			&dev_attr_wakeup);
+	if (status != 0)
+		pr_warn("Failed to crate wakeup %d\n", status);
+	vfs_platform_dev->wakeup_source = 0;
 
 	PR_INFO("vfs_platform_probe succeeded\n");
 

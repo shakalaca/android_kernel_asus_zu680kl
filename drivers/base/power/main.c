@@ -37,6 +37,7 @@
 
 typedef int (*pm_callback_t)(struct device *);
 
+unsigned int pm_pwrcs_ret = 0; /* [PM] This flag can check dpm_suspend state for resume_console in printk.c */
 /*
  * The entries in the dpm_list list are in a depth first order, simply
  * because children are guaranteed to be discovered after parents, and
@@ -1171,7 +1172,7 @@ static int __device_suspend(struct device *dev, pm_message_t state, bool async)
 
 	if (dev->power.syscore)
 		goto Complete;
-	
+
 	dpm_wd_set(&wd, dev);
 
 	device_lock(dev);
@@ -1301,6 +1302,7 @@ int dpm_suspend(pm_message_t state)
 		if (async_error)
 			break;
 	}
+	pm_pwrcs_ret = 1; /* [PM] This flag can check dpm_suspend state for resume_console in printk.c */
 	mutex_unlock(&dpm_list_mtx);
 	async_synchronize_full();
 	if (!error)

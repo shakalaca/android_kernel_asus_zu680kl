@@ -26,6 +26,7 @@ extern unsigned char OCM_CODE_AD[];
 unsigned char *OCM_CODE;
 extern int asus_otg_boost_enable(int, bool);
 extern int g_reverse_charger_mode;
+static unsigned char confirmed_cable_det(void *data);
 /* to access global platform data */
 #ifdef PD_CHARGING_DRIVER_SUPPORT
 struct work_struct pdwork;
@@ -41,6 +42,7 @@ struct power_supply *usb_psy;
 extern bool msm_otg_id_state(void);
 extern unsigned char downstream_pd_cap;
 struct completion rdo_completion;
+struct completion prswap_completion;
 struct ohio_platform_data {
 	int gpio_p_on;
 	int gpio_reset;
@@ -215,6 +217,14 @@ void ohio_hardware_poweron(void)
 				return;
 			}
 			mdelay(1);
+			/*check cable det state 4 times again avoid system block by wrong cable interrupt*/
+			if ((i+1) % 4 == 0) {
+				if (confirmed_cable_det((void *)g_ohio) == 0) {
+					pr_err("ohio : wrong cable detect\n");
+					ohio_power_standby();
+					return;
+				}
+			}
 			printk(".");
 		}
 		ohio_power_standby();
@@ -596,6 +606,7 @@ static int dual_role_set_mode_prop(struct dual_role_phy_instance *dual_role,
 	struct ohio_data *ohio = dual_role_get_drvdata(dual_role);
 	int ret = 0;
 	int mode = 0;
+	u32 timeout;
 
 	if (!ohio)
 		return -EINVAL;
@@ -622,6 +633,16 @@ static int dual_role_set_mode_prop(struct dual_role_phy_instance *dual_role,
 		if (!ret) {
 			if(!downstream_pd_cap) {
 				pr_err("success power role is %s\n", get_power_role() ? "Source" : "Sink");
+			} else {
+				INIT_COMPLETION(prswap_completion);
+				timeout =wait_for_completion_timeout(&prswap_completion, msecs_to_jiffies(1000));
+				if (!timeout)
+					pr_warn("power swap timeout\n");
+				msleep(1000);
+				if(get_data_role() == 0) {
+					pr_info("data role is ufp\n");
+					interface_dr_swap();
+				}
 			}
 		} else {
 			pr_err("failed power role is %s\n", get_power_role() ? "Source" : "Sink");
@@ -635,6 +656,18 @@ static int dual_role_set_mode_prop(struct dual_role_phy_instance *dual_role,
 		if (!ret) {
 			if(!downstream_pd_cap)
 				pr_err("success power role is %s\n", get_power_role() ? "Source" : "Sink");
+			else {
+				INIT_COMPLETION(prswap_completion);
+				timeout =wait_for_completion_timeout(&prswap_completion, msecs_to_jiffies(1000));
+				if (!timeout)
+					pr_warn("power swap timeout\n");
+				msleep(1000);
+				if(get_data_role() == 1) {
+					pr_info("data role is dfp\n");
+					interface_dr_swap();
+				}
+
+			}
 		} else {
 			if(!downstream_pd_cap) {
 				asus_otg_boost_enable(1, (bool)g_reverse_charger_mode);
@@ -819,6 +852,7 @@ static int ohio_i2c_probe(struct i2c_client *client,
 		goto err3;
 	}
 	init_completion(&rdo_completion);
+	init_completion(&prswap_completion);
 
 	ret = request_threaded_irq(client->irq, NULL, ohio_intr_comm_isr,
 				   IRQF_TRIGGER_RISING  | IRQF_ONESHOT, "ohio-intr-comm", ohio);
@@ -1093,8 +1127,8 @@ ssize_t anx_ohio_update_otp(struct device *dev,
 
 	if(fwver == 0x11)
 		OCM_CODE = OCM_CODE_AB;// fw 1.2
-	else if (fwver == 0xd0)
-		OCM_CODE = OCM_CODE_AD;// fw 2.0
+	else if (fwver == 0xd0 || fwver == 0x20)
+		OCM_CODE = OCM_CODE_AD;// fw 2.1
 	else
 		return count;
 

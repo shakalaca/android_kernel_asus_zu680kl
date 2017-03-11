@@ -25,6 +25,8 @@
 
 static struct class *leds_class;
 static int enable_brightness_debug = 0;
+int cabc = 1;
+void iris_tcon_cabc_on_off(u8 addr, u8 value);
 static void led_update_brightness(struct led_classdev *led_cdev)
 {
 	if (led_cdev->brightness_get)
@@ -114,6 +116,33 @@ static ssize_t led_brightness_debug_show(struct device *dev,
 	return rc;
 }
 
+static ssize_t led_cabc_store(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t size)
+{
+	ssize_t ret = -EINVAL;
+	long debug = 0;
+
+	ret = strict_strtoul(buf, 10, &debug);
+	if (debug) {
+		cabc = 1;
+		iris_tcon_cabc_on_off(0x55, 0x2e);
+	}
+	else {
+		cabc = 0;
+		iris_tcon_cabc_on_off(0x55, 0x24);
+	}
+	ret = size;
+	return ret;
+}
+
+static ssize_t led_cabc_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	int rc = -ENXIO;
+	rc = sprintf(buf, "%d\n",cabc);
+	return rc;
+}
+
 static struct device_attribute led_class_attrs[] = {
 	__ATTR(brightness, 0644, led_brightness_show, led_brightness_store),
 	__ATTR(max_brightness, 0644, led_max_brightness_show,
@@ -122,6 +151,7 @@ static struct device_attribute led_class_attrs[] = {
 	__ATTR(trigger, 0644, led_trigger_show, led_trigger_store),
 #endif
 	__ATTR(backlight_debug, 0644, led_brightness_debug_show, led_brightness_debug_store),
+	__ATTR(cabc, 0644, led_cabc_show, led_cabc_store),
 	__ATTR_NULL,
 };
 

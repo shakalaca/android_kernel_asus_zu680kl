@@ -449,12 +449,16 @@ static ssize_t store_attrs_handler(struct device *dev,
         mutex_unlock(&cap_mtx);
     } else if (!strcmp(attr_name, dev_attr_irq_status.attr.name)) {
         if (!value) {
-            disable_irq(client->irq);
-            irq_enabled = 0;
+            if (irq_enabled) {
+                disable_irq(client->irq);
+                irq_enabled = 0;
+            }
         }
         else {
-            enable_irq(client->irq);
-            irq_enabled = 1;
+            if (!irq_enabled) {
+                enable_irq(client->irq);
+                irq_enabled = 1;
+            }
         }
         mutex_unlock(&cap_mtx);
     } else if (!strcmp(attr_name, dev_attr_threshold1.attr.name)) {
@@ -614,16 +618,22 @@ static int cap12LF1552_suspend(struct device *dev) {
     struct cap12LF1552_data *cap_data = dev_get_drvdata(dev);
     cancel_delayed_work_sync(&cap_data->work);
     cap12LF1552_write_reg(client, SLEEP_CONTROL, 0x0F);
-    disable_irq(client->irq);
-    //CAP_DEBUG("vk suspend\n");
+    if (irq_enabled) {
+        disable_irq(client->irq);
+        irq_enabled = 0;
+    }
+    CAP_DEBUG("cap12LF1552 suspend\n");
     return 0;
 }
 
 static int cap12LF1552_resume(struct device *dev) {
     struct i2c_client *client = to_i2c_client(dev);
     cap12LF1552_write_reg(client, SLEEP_CONTROL, 0x00);
-    enable_irq(client->irq);
-    //CAP_DEBUG("vk resume\n");
+    if (!irq_enabled) {
+        enable_irq(client->irq);
+        irq_enabled = 1;
+    }
+    CAP_DEBUG("cap12LF1552 resume\n");
     return 0;
 }
 
@@ -646,7 +656,9 @@ static struct i2c_driver cap12LF1552_driver = {
         .name  = "cap12LF1552",
         .owner = THIS_MODULE,
         .of_match_table = cap12LF1552_dt_ids,
+#ifdef CONFIG_PM
         .pm = &cap1106_pm_ops,
+#endif
     },
     .probe     = cap12LF1552_probe,
     .id_table  = cap12LF1552_id,

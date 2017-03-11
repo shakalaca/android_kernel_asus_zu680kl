@@ -91,6 +91,11 @@ static const char longname[] = "Gadget Android";
 //ASUS_BSP+++ "[USB][NA][Spec] add diag enable support in kernel"
 static int diag_enable = 0;
 //ASUS_BSP--- "[USB][NA][Spec] add diag enable support in kernel"
+extern int getMACConnect(void);
+extern int getHostTypeChanged(void);
+extern int getDetectHostFinished(void);
+extern void resetHostTypeChanged(void);
+extern void resetDetectHostFinished(void);
 
 /* Default vendor and product IDs, overridden by userspace */
 #define VENDOR_ID		0x18D1
@@ -409,6 +414,7 @@ static void android_work(struct work_struct *data)
 	char *configured[2]   = { "USB_STATE=CONFIGURED", NULL };
 	char *suspended[2]   = { "USB_STATE=SUSPENDED", NULL };
 	char *resumed[2]   = { "USB_STATE=RESUMED", NULL };
+	char *host_changed[2]   = { "USB_STATE=HOSTCHANGED", NULL };
 	char **uevent_envp = NULL;
 	static enum android_device_state last_uevent, next_state;
 	unsigned long flags;
@@ -458,6 +464,7 @@ static void android_work(struct work_struct *data)
 		      (last_uevent != USB_DISCONNECTED)) ||
 		    ((uevent_envp == configured) &&
 		      (last_uevent == USB_CONFIGURED))) {
+			last_uevent = USB_DISCONNECTED;
 			pr_info("%s: sent missed DISCONNECT event\n", __func__);
 			kobject_uevent_env(&dev->dev->kobj, KOBJ_CHANGE,
 								disconnected);
@@ -490,11 +497,20 @@ static void android_work(struct work_struct *data)
 			kobject_uevent_env(&dev->dev->kobj, KOBJ_CHANGE,
 					   uevent_envp);
 			last_uevent = next_state;
+			if(getHostTypeChanged()){
+				kobject_uevent_env(&dev->dev->kobj, KOBJ_CHANGE,
+									host_changed);
+				resetHostTypeChanged();
+			}
 		}
 		pr_info("%s: sent uevent %s\n", __func__, uevent_envp[0]);
 	} else {
 		pr_info("%s: did not send uevent (%d %d %p)\n", __func__,
 			 dev->connected, dev->sw_connected, cdev->config);
+	}
+	if (!dev->connected) {
+		if (getDetectHostFinished())
+			resetDetectHostFinished();
 	}
 }
 
@@ -3254,6 +3270,15 @@ functions_store(struct device *pdev, struct device_attribute *attr,
 	b = strim(buf);
 
 	dev->cdev->gadget->streaming_enabled = false;
+
+	if(getMACConnect()){
+		printk("[USB] Connect to MAC\n");
+	}else{
+		printk("[USB] Connect to Other\n");
+	}
+	printk("[USB] func:%s\n",buf);
+	ASUSEvtlog("[USB] func:%s\n",buf);
+	
 	while (b) {
 		conf_str = strsep(&b, ":");
 		if (!conf_str)
@@ -3293,12 +3318,15 @@ functions_store(struct device *pdev, struct device_attribute *attr,
 					ffs_enabled = 1;
 				continue;
 			}
-
-			if (!strcmp(name, "rndis") &&
-				!strcmp(strim(rndis_transports), "BAM2BAM_IPA"))
+			if(getMACConnect()&&strcmp(name,"rndis")==0){
+				err = android_enable_function(dev, conf, "ecm");
+			} else {
+				if (!strcmp(name, "rndis") &&
+					!strcmp(strim(rndis_transports), "BAM2BAM_IPA"))
 				name = "rndis_qc";
+				err = android_enable_function(dev, conf, name);
+			}
 
-			err = android_enable_function(dev, conf, name);
 			if (err)
 				pr_err("android_usb: Cannot enable '%s' (%d)",
 							name, err);
@@ -3371,6 +3399,9 @@ static ssize_t enable_store(struct device *pdev, struct device_attribute *attr,
 						enabled_list) {
 				if (f_holder->f->enable)
 					f_holder->f->enable(f_holder->f);
+				if(strncmp(f_holder->f->name,"ecm",3)==0){
+					cdev->desc.bDeviceClass = USB_CLASS_COMM;
+				}
 				if (!strncmp(f_holder->f->name,
 						"audio_source", 12))
 					audio_enabled = true;
@@ -3469,17 +3500,20 @@ static ssize_t diag_store(struct device *pdev, struct device_attribute *attr,
 static ssize_t serial_show(struct device *pdev, struct device_attribute *attr,
 			   char *buf)
 {
+	printk("%s: %s\n", __func__, serial_string);
 	return snprintf(buf, PAGE_SIZE, "%s\n", serial_string);
 }
 static ssize_t serial_store(struct device *pdev, struct device_attribute *attr,
 			    const char *buff, size_t size)
 {
+	printk("%s: %s\n", __func__, buff);
 	//ensure SSN number in the ASCII range of "0" to "Z"
 	if(buff[0] >= 0x30 && buff[0] <= 0x5a)
 		sscanf(buff, "%s", serial_string);
-	else
+	else {
+		printk("%s: buff[0] check fail, use default value C4ATAS000000\n", __func__);
 		sscanf("C4ATAS000000", "%s", serial_string);
-
+	}
 	return size;
 }
 //ASUS_BSP--- "[USB][NA][Spec] add diag enable support in kernel"

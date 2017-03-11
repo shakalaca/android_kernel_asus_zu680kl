@@ -4,7 +4,7 @@
 #include "anx_ohio_public_interface.h"
 					
 
-//#define OHIO_OCM_OTP_VERSION
+#define OHIO_OCM_OTP_VERSION
 
 #ifdef OHIO_OCM_OTP_VERSION
 #define OHIO_OCM_LOADING_TIME 20
@@ -34,14 +34,19 @@
 
 /*5000mv voltage*/
 #define PD_VOLTAGE_5V 5000
+#define PD_VOLTAGE_6V 6000
+#define PD_VOLTAGE_7P5V 7500
+#define PD_VOLTAGE_9V 9000
 
 #define PD_MAX_VOLTAGE_20V 20000
 #define PD_MAX_VOLTAGE_21V 21000
 /*0.9A current */
 #define PD_CURRENT_900MA   900
 #define PD_CURRENT_1500MA 1500
+#define PD_CURRENT_500MA   500
 
 #define PD_CURRENT_3A   3000
+#define PD_CURRENT_2A   2000
 
 #define PD_POWER_15W  15000
 

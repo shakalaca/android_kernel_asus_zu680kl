@@ -656,7 +656,7 @@ static int mdss_mdp_video_stop(struct mdss_mdp_ctl *ctl, int panel_power_state)
 	return 0;
 }
 
-#ifdef CONFIG_PIXELWORKS_IRIS_SUPPORT
+#ifdef CONFIG_PIXELWORKS_IRIS_SUPPORT_DEBUG
 static void iris_video_cadence_check(struct mdss_mdp_ctl *ctl)
 {
 	static enum { C11 = 11, C22 = 22, C32 = 32 } cadence = C11;
@@ -735,7 +735,7 @@ static void mdss_mdp_video_vsync_intr_done(void *arg)
 		return;
 	}
 
-#ifdef CONFIG_PIXELWORKS_IRIS_SUPPORT
+#ifdef CONFIG_PIXELWORKS_IRIS_SUPPORT_DEBUG
 	if (iris2_get_id() == 0x1)
 		iris_video_cadence_check(ctl);
 #endif

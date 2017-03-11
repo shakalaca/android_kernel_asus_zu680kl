@@ -1209,6 +1209,13 @@ static int __init Laura_init_module(void)
 	int32_t rc = 0;
 	
 	LOG_Handler(LOG_DBG, "%s: Enter\n", __func__);
+
+	/* only ER3 and PR is ST laser */
+	if (g_ASUS_hwID == 3 || g_ASUS_hwID == 4) {
+		LOG_Handler(LOG_CDBG, "%s: ST laser, ignore this function\n", __func__);
+		return 0;
+	}
+
 	rc = platform_driver_probe(&msm_laser_focus_platform_driver, Olivia_platform_probe);
 	if (rc == 0) {
 		pr_err("laser platform_driver_register success");

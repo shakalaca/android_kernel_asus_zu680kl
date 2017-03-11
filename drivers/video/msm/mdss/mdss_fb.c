@@ -173,6 +173,7 @@ static void mdss_fb_set_bl_brightness(struct led_classdev *led_cdev,
 		if ((tmp_backlight == 0) && (value > 0)) {
 			mdelay(90);
 		}
+
 		mdss_fb_set_backlight(mfd, bl_lvl);
 		mutex_unlock(&mfd->bl_lock);
 	}

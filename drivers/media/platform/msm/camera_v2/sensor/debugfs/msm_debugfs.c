@@ -1190,7 +1190,7 @@ static const struct file_operations rear_thermal_proc_fops = {
 	.release = single_release,
 };
 
-static int i2c_write_thu_imx318(uint8_t *value, int num) {
+int i2c_write_thu_imx318(uint8_t *value, int num) {
 	int ret = 0, i = 0;
 	uint16_t status = 0;
 	struct msm_camera_i2c_client *client = s_ctrl_imx318->sensor_i2c_client;
@@ -1231,7 +1231,7 @@ static int i2c_write_thu_imx318(uint8_t *value, int num) {
 	return ret;
 }
 
-static int i2c_read_thu_imx318(uint8_t *value, int num, uint8_t *read_data, int read_num) {
+int i2c_read_thu_imx318(uint8_t *value, int num, uint8_t *read_data, int read_num) {
 	int ret = 0, i = 0;
 	uint16_t status_0x3370 = 0;
 	uint16_t status = 0;
@@ -1275,7 +1275,7 @@ static int i2c_read_thu_imx318(uint8_t *value, int num, uint8_t *read_data, int 
 	/* read data from vcm */
 	for (i = 0; i < read_num; i++) {
 		i2c_read(client, 0x3378+num+i, (uint16_t*)&(read_data[i]), 1);
-		pr_err("%s: read_data[%d]=0x%x\n", __func__, i, read_data[i]);
+		pr_debug("%s: read_data[%d]=0x%x\n", __func__, i, read_data[i]);
 	}
 
 	return ret;
@@ -1302,7 +1302,7 @@ static const struct file_operations vcm_Z1_Z2_proc_fops = {
 	.release = single_release,
 };
 
-void vcm_Z1_Z2_read()
+void vcm_Z1_Z2_read(uint16_t *actuator_data_Z1, uint16_t *actuator_data_Z2)
 {
 	int ret = 0;
 	uint8_t value1[2] = {0x72, 0xF0};
@@ -1334,6 +1334,8 @@ void vcm_Z1_Z2_read()
 	vcm_z2_temp = (read_data[0] << 8) | read_data2[0];
 	vcm_z2 = (((vcm_z2_temp << 4)+ 0x8000)&0xffff) >> 4;
 	pr_err("%s: convert Z2 to %d, 0x%x\n", __func__, vcm_z2, vcm_z2);
+	*actuator_data_Z1 = vcm_z1;
+	*actuator_data_Z2 = vcm_z2;
 }
 
 void update_vcm_fw(int version)
@@ -1573,6 +1575,28 @@ static const struct file_operations dbg_dump_vcm_fw_fops = {
 	.read		= dbg_dump_vcm_fw_read,
 };
 
+static int vcm_min_max_proc_read(struct seq_file *buf, void *v)
+{
+	uint16_t vcm_Z1_minus_25um = 0;
+	vcm_Z1_minus_25um = vcm_z1 - ((vcm_z2 - vcm_z1)*25/300);
+	seq_printf(buf, "0x%02x 0x%02x 0x%02x 0x%02x\n", (vcm_Z1_minus_25um & 0xFF00) >> 8, vcm_Z1_minus_25um & 0xFF, (vcm_z2 & 0xFF00) >> 8, vcm_z2 & 0xFF);
+	return 0;
+}
+
+static int vcm_min_max_proc_open(struct inode *inode, struct  file *file)
+{
+	return single_open(file, vcm_min_max_proc_read, NULL);
+}
+
+static const struct file_operations vcm_min_max_proc_fops = {
+	.owner = THIS_MODULE,
+	.open = vcm_min_max_proc_open,
+	.read = seq_read,
+	.llseek = seq_lseek,
+	.release = single_release,
+};
+
+
 int msm_debugfs_init(struct msm_sensor_ctrl_t *s_ctrl,
 		struct msm_camera_sensor_slave_info *slave_info)
 {
@@ -1635,6 +1659,7 @@ int msm_debugfs_init(struct msm_sensor_ctrl_t *s_ctrl,
 		proc_create(REAR_OTP_THERMAL_FILE, 0664, NULL, &rear_thermal_proc_fops);
 		proc_create(IMX318_RW_PROC_FILE, 0664, NULL, &imx318_rw_proc_fops);
 		proc_create(VCM_Z1_Z2_PROC_FILE, 0664, NULL, &vcm_Z1_Z2_proc_fops);
+		proc_create(VCM_MIN_MAX_PROC_FILE, 0664, NULL, &vcm_min_max_proc_fops);
 	} else if (!strcmp(sensor_name,"ov8856")) {
 		(void) debugfs_create_file("CameraOTP", S_IRUGO,
 			debugfs_dir, NULL, &dbg_dump_ov8856_otp_fops);

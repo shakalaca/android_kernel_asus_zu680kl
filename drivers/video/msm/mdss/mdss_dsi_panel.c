@@ -43,6 +43,11 @@ extern int entry_mode;
 #define DT_CMD_HDR 6
 #define MIN_REFRESH_RATE 48
 #define DEFAULT_MDP_TRANSFER_TIME 14000
+#define WLED_MAX_LEVEL_ENABLE 4095
+#define WLED_MIN_LEVEL_DISABLE 0
+static bool bl_wled_enable = false;
+extern int cabc;
+void iris_tcon_cabc_on_off(u8 addr, u8 value);
 
 DEFINE_LED_TRIGGER(bl_led_trigger);
 
@@ -588,6 +593,7 @@ static void mdss_dsi_panel_bl_ctrl(struct mdss_panel_data *pdata,
 	struct mdss_dsi_ctrl_pdata *ctrl_pdata = NULL;
 	struct mdss_dsi_ctrl_pdata *sctrl = NULL;
 
+
 	if (pdata == NULL) {
 		pr_err("%s: Invalid input data\n", __func__);
 		return;
@@ -637,8 +643,20 @@ static void mdss_dsi_panel_bl_ctrl(struct mdss_panel_data *pdata,
 		mdss_dsi_panel_bklt_pwm(ctrl_pdata, bl_level);
 		break;
 	case BL_DCS_CMD:
+		if (bl_level && !bl_wled_enable) {
+			led_trigger_event(bl_led_trigger, WLED_MAX_LEVEL_ENABLE);
+			bl_wled_enable = true;
+		} else if (bl_level == 0 && bl_wled_enable) {
+			led_trigger_event(bl_led_trigger, WLED_MIN_LEVEL_DISABLE);
+			bl_wled_enable = false;
+		}
+
 		if (!mdss_dsi_sync_wait_enable(ctrl_pdata)) {
-			mdss_dsi_panel_bklt_dcs(ctrl_pdata, bl_level);
+#ifdef ENABLE_TCON_CABC
+			iris_tcon_cabc_configure(ctrl_pdata, bl_level);
+#else
+ 			mdss_dsi_panel_bklt_dcs(ctrl_pdata, bl_level);
+#endif
 			break;
 		}
 		/*
@@ -804,6 +822,11 @@ static int mdss_dsi_panel_on(struct mdss_panel_data *pdata)
 
 	if (ctrl->ds_registered)
 		mdss_dba_utils_video_on(pinfo->dba_data, pinfo);
+
+	if (cabc)
+		iris_tcon_cabc_on_off(0x55, 0x2e);
+	else
+		iris_tcon_cabc_on_off(0x55, 0x24);
 end:
 	pr_info("%s:-\n", __func__);
 	return ret;
@@ -2036,6 +2059,8 @@ int mdss_panel_parse_bl_settings(struct device_node *np,
 								 __func__);
 			}
 		} else if (!strcmp(data, "bl_ctrl_dcs")) {
+			led_trigger_register_simple("bkl-trigger",
+				&bl_led_trigger);
 			ctrl_pdata->bklt_ctrl = BL_DCS_CMD;
 			pr_debug("%s: Configured DCS_CMD bklt ctrl\n",
 								__func__);
@@ -2046,7 +2071,7 @@ int mdss_panel_parse_bl_settings(struct device_node *np,
 
 void mdss_dsi_unregister_bl_settings(struct mdss_dsi_ctrl_pdata *ctrl_pdata)
 {
-	if (ctrl_pdata->bklt_ctrl == BL_WLED)
+	if (ctrl_pdata->bklt_ctrl == BL_WLED || ctrl_pdata->bklt_ctrl == BL_DCS_CMD)
 		led_trigger_unregister_simple(bl_led_trigger);
 }
 int Tcon_frame_rate = 0;
@@ -2441,7 +2466,8 @@ int mdss_dsi_panel_init(struct device_node *node,
 	ctrl_pdata->panel_data.set_backlight = mdss_dsi_panel_bl_ctrl;
 	ctrl_pdata->switch_mode = mdss_dsi_panel_switch_mode;
 
-	proc_create("lcd_unique_id", 0444, NULL, &lcd_unique_id_proc_fops);
+	if (ctrl_pdata->panel_data.panel_info.is_prim_panel)
+		proc_create("lcd_unique_id", 0444, NULL, &lcd_unique_id_proc_fops);
 
 	pr_info("%s--\n", __func__);
 	return 0;

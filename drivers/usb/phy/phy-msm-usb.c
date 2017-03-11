@@ -2922,16 +2922,23 @@ static int msm_otg_usbdev_notify(struct notifier_block *self,
 	struct usb_otg *otg = motg->phy.otg;
 	struct usb_device *udev = priv;
 	struct usb_interface_descriptor *desc = NULL;
+	struct usb_config_descriptor *config_desc = NULL;
+	int i;
 
 	if (action == USB_DEVICE_ADD || action == USB_DEVICE_CONFIG) {
-		if (udev->actconfig && udev->actconfig->intf_cache[0]) {
-			desc = &udev->actconfig->intf_cache[0]->altsetting->desc;
-			if (desc->bInterfaceClass == USB_CLASS_MASS_STORAGE && desc->bInterfaceSubClass == 6) {
-				printk("[usb_otg] USBdisk insert\n");
-				g_keep_power_on = 1;
-			} else if (desc->bInterfaceClass == USB_CLASS_AUDIO && desc->bInterfaceSubClass == 1) {
-				printk("[usb_otg] USB Sound card insert\n\n");
-				g_keep_power_on = 1;
+		if (udev->actconfig) {
+			config_desc = &udev->actconfig->desc;
+			for(i = 0; i < config_desc->bNumInterfaces; i++) {
+				if(!udev->actconfig->intf_cache[i])
+					continue;
+				desc = &udev->actconfig->intf_cache[i]->altsetting->desc;
+				if (desc->bInterfaceClass == USB_CLASS_MASS_STORAGE && desc->bInterfaceSubClass == 6) {
+					printk("[usb_otg] USBdisk insert\n");
+					g_keep_power_on = 1;
+				} else if (desc->bInterfaceClass == USB_CLASS_AUDIO) {
+					printk("[usb_otg] USB Sound card insert\n");
+					g_keep_power_on = 1;
+				}
 			}
 		}
 	} else if (action == USB_DEVICE_REMOVE) {

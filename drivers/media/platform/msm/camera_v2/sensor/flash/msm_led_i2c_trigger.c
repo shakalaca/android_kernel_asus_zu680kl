@@ -42,8 +42,9 @@ static int ATD_status; //ASUS_BSP PJ "add flash status"
 #define MAX_FLASH_CURRENT 900
 #define MAX_FLASH_DURATION 800
 #define MAX_ZENFLASH_DURATION 80
-#define ZENFLASH_CURRENT 800
-
+#define ZENFLASH_MIN_CURRENT 300
+#define ZENFLASH_CURRENT 900
+#define ZENFLASH_TESTTIME_RESET_CMD 100
 int32_t msm_led_i2c_trigger_get_subdev_id(struct msm_led_flash_ctrl_t *fctrl,
 	void *arg)
 {
@@ -1140,6 +1141,8 @@ static int32_t asus_tranlate_flash_data_to_bsp(struct msm_flash_cfg_data_t flash
 #define	ZENFLASH_PROC_FILE	"driver/asus_flash_trigger_time"
 static struct proc_dir_entry *zenflash_proc_file;
 static int zenflash_status;
+static int zenflash_test_time;
+
 
 static ssize_t zenflash_proc_write(struct file *filp, const char __user *buf, size_t count, loff_t *ppos)
 {
@@ -1148,14 +1151,15 @@ static ssize_t zenflash_proc_write(struct file *filp, const char __user *buf, si
 	struct msm_flash_cfg_data_t flash_data;
   struct msm_camera_i2c_reg_array i2c_commands[3];
 	struct msm_camera_i2c_reg_setting custom_flash_setting;
-	int duration = 0;
+	int duration = 0, zenflash_current = 0;
 	bsp_flash_data cfg;
 	len = (count > DBG_TXT_BUF_SIZE-1)? (DBG_TXT_BUF_SIZE-1):(count);
 	if (copy_from_user(debugTxtBuf, buf, len))
 			return -EFAULT;
 	debugTxtBuf[len] = 0; //add string end
-	sscanf(debugTxtBuf, "%d", &duration);
-	pr_err("%s %d, duration = %d\n", __func__, __LINE__, duration);
+	pr_err("%s %d, count: %d\n", __func__, __LINE__, (int) count);
+	sscanf(debugTxtBuf, "%d %d", &duration, &zenflash_current);
+	pr_err("%s %d, duration = %d, current = %d\n", __func__, __LINE__, duration, zenflash_current);
 	if(flash_ctrl->led_state != MSM_CAMERA_LED_INIT ) {
 		rc = msm_flash_led_init(flash_ctrl);
 		if (rc < 0) {
@@ -1165,41 +1169,68 @@ static ssize_t zenflash_proc_write(struct file *filp, const char __user *buf, si
 				if (rc < 0) {
 					pr_err("%s:%d camera_flash_release failed rc = %d",
 						__func__, __LINE__, rc);
-					return rc;
+					*ppos += count;
+          rc = count;
+          return rc;
 				}
-			return rc;
+			*ppos += count;
+      rc = count;
+      return rc;
 		}
 	}
-	if(duration > 0 && duration <= MAX_ZENFLASH_DURATION) {
+	if(duration == ZENFLASH_TESTTIME_RESET_CMD) {
+    zenflash_test_time = 0;
+    pr_err("%s:%d zenflash test time has been set to 0", __func__, __LINE__);
+    *ppos += count;
+    rc = count;
+    return rc;
+	}
+	else if(duration > 0 && duration <= MAX_ZENFLASH_DURATION) {
+	    if(zenflash_current == 0) {
+	      pr_err("%s:%d zenflash_current has not been set, using default %d",
+						__func__, __LINE__, ZENFLASH_CURRENT);
+        zenflash_current = ZENFLASH_CURRENT;
+	    }
+	    else if(zenflash_current < ZENFLASH_MIN_CURRENT) {
+	      pr_err("%s:%d zenflash_current has been set to %d, which is too low. Use min current %d",
+						__func__, __LINE__, zenflash_current, ZENFLASH_MIN_CURRENT);
+        zenflash_current = ZENFLASH_MIN_CURRENT;
+	    }
       printk(KERN_INFO "[AsusZenFlashDuration] duration now in 1 ~ %d\n", MAX_ZENFLASH_DURATION);
-			flash_data.flash_current[0] = (ZENFLASH_CURRENT + 6 )/12;
+			flash_data.flash_current[0] = (zenflash_current + 6 )/12;
 			flash_data.flash_current[1] = 0;
 			flash_data.flash_current[2] = 0;
 			if(flash_ctrl->led_state == MSM_CAMERA_LED_INIT) {
+        int led_data_cnt = 0;
 				rc = msm_flash_led_off(flash_ctrl);
 				if (rc < 0) {
 					pr_err("%s:%d camera_flash_off failed rc = %d\n",
 						__func__, __LINE__, rc);
-					return rc;
+					*ppos += count;
+          rc = count;
+          return rc;
 				}
 				flash_data.cfg_type = CFG_FLASH_HIGH;
 				asus_tranlate_flash_data_to_bsp(flash_data, &cfg);
-        count = msm_flash_led_data_to_i2c(i2c_commands, cfg, 3);
-        if (count > 0) {
+        led_data_cnt = msm_flash_led_data_to_i2c(i2c_commands, cfg, 3);
+        if (led_data_cnt > 0) {
           custom_flash_setting.reg_setting = i2c_commands;
-          custom_flash_setting.size = count;//ARRAY_SIZE(i2c_commands);
+          custom_flash_setting.size = led_data_cnt;//ARRAY_SIZE(i2c_commands);
           custom_flash_setting.addr_type = MSM_CAMERA_I2C_BYTE_ADDR;
           custom_flash_setting.data_type = MSM_CAMERA_I2C_BYTE_DATA;
           custom_flash_setting.delay = 0;
           rc = msm_flash_write_custom_commands(gBsp_led_flash_ctrl, &custom_flash_setting);
           rc = msm_flash_led_high(flash_ctrl);
           zenflash_status = 1;
+          zenflash_test_time++;
           msleep(duration);
           rc = msm_flash_led_off(flash_ctrl);
           zenflash_status = 0;
           if (rc < 0) {
             pr_err("%s:%d camera_flash_high failed rc = %d",
             __func__, __LINE__, rc);
+            *ppos += count;
+            rc = count;
             return rc;
           }
         }
@@ -1209,12 +1240,14 @@ static ssize_t zenflash_proc_write(struct file *filp, const char __user *buf, si
     printk(KERN_INFO "[AsusZenFlashDuration] duration now is %d, invalid value.\n", duration);
     return -EINVAL;
 	}
-	return rc;
+	*ppos += count;
+   rc = count;
+   return rc;
 }
 
 static int zenflash_read(struct seq_file *buf, void *v)
 {
-	seq_printf(buf, "%d\n", zenflash_status);
+	seq_printf(buf, "%d %d\n", zenflash_status, zenflash_test_time);
 	return 0;
 }
 
@@ -1276,8 +1309,8 @@ static ssize_t msm_flash_brightness_proc_write(struct file *filp, const char __u
 		return len;
 	}
 	last_flash_brightness_value = now_flash_brightness_value;
-  if (now_flash_brightness_value != 0 )
-    flash_status = 1;
+	if (now_flash_brightness_value != 0 )
+		flash_status = 1;
 	for (i = 0; i < MAX_LED_TRIGGERS; i++) {
 		flash_data.flash_current[i] = (flash_ctrl->flash_max_current[i] + 6)/12;
 	}
@@ -1684,6 +1717,8 @@ static void create_proc_file(void)
     zenflash_proc_file = proc_create(ZENFLASH_PROC_FILE, 0666, NULL, &zenflash_proc_fops);
     if (zenflash_proc_file) {
       printk("%s zenflash_proc_file sucessed!\n", __func__);
+      zenflash_status = 0;
+      zenflash_test_time = 0;
     } else {
       printk("%s zenflash_proc_file failed!\n", __func__);
     }

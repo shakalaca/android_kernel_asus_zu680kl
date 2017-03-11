@@ -151,10 +151,13 @@ static void cap12LF1552_music_settings(struct work_struct *work) {
         schedule_delayed_work(&data->calibration_work, msecs_to_jiffies(5000));
         CAP_DEBUG("Enter Workaround\n");
     } else {
+        cancel_delayed_work_sync(&data->calibration_work);
         cap12LF1552_write_reg(data->client, SAMPLE_CONFIG, 0x0A);
+        mutex_unlock(&cap_mtx);
+        msleep(3000);
+        mutex_lock(&cap_mtx);
         cap12LF1552_write_reg(data->client, SENSOR1_THRESHOLD, 0x96);
         cap12LF1552_write_reg(data->client, SENSOR2_THRESHOLD, 0x96);
-        cancel_delayed_work_sync(&data->calibration_work);
         CAP_DEBUG("Leave Workaround\n");
     }
     mutex_unlock(&cap_mtx);
@@ -162,10 +165,7 @@ static void cap12LF1552_music_settings(struct work_struct *work) {
 
 void notify_speaker_status(int music_on) {
     change_settings = music_on;
-    if (music_on)
-        schedule_delayed_work(&cap_data->music_work, 0);
-    else
-        schedule_delayed_work(&cap_data->music_work, msecs_to_jiffies(2000));
+    schedule_delayed_work(&cap_data->music_work, 0);
 }
 EXPORT_SYMBOL(notify_speaker_status);
 
@@ -186,12 +186,14 @@ static void cap12LF1552_work_function(struct work_struct *work) {
 
     val = cap12LF1552_read_reg(data->client, SENSOR_STATUS);
     if ((val & BACK) && (val & APP_SWITCH)) {
+        mutex_lock(&cap_mtx);
         if (change_settings) {
             cap12LF1552_write_reg(data->client, SAMPLE_CONFIG, 0x07);
         }
         else {
             cap12LF1552_write_reg(data->client, SAMPLE_CONFIG, 0x0A);
         }
+        mutex_unlock(&cap_mtx);
         return;
     }
     change = val ^ prev_val;

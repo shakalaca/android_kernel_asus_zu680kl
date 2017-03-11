@@ -477,6 +477,11 @@ module_param_named(
 static int asus_charger_limit_percentage = 70;
 static int asus_charger_limit_en = 1;
 
+static int asus_demoapp_charger_limit_en = 0;
+module_param_named(
+	asus_demoapp_charger_limit, asus_demoapp_charger_limit_en, int, S_IRUGO | S_IWUSR
+);
+
 static int asus_smbchg_probe_done = 0;
 module_param_named(
 	chargerIC_status, asus_smbchg_probe_done, int, S_IRUGO
@@ -1059,6 +1064,35 @@ static int get_prop_charge_type(struct smbchg_chip *chip)
 	return POWER_SUPPLY_CHARGE_TYPE_NONE;
 }
 
+static int enableADF_check(void)
+{
+	char buf[4] = {0, 0, 0, 0};
+	struct file *fd;
+
+	mm_segment_t old_fs = get_fs();
+	set_fs(KERNEL_DS);
+	fd = filp_open("/ADF/ADF", O_RDONLY, 0);
+
+	if (!IS_ERR(fd)) {
+		kernel_read(fd, fd->f_pos, buf, 4);
+		filp_close(fd, NULL);
+	} else {
+		set_fs(old_fs);
+		pr_info("open /ADF/ADF fail\n");
+		return 0;
+	}
+
+	set_fs(old_fs);
+	pr_info("***** check ADF: %d\n", buf[3]);
+	if (buf[3] == 1 || buf[3] == 2) {
+		pr_info("enableADF_check pass %d\n", buf[3]);
+		return 1;
+	} else {
+		pr_info("enableADF_check fail %d\n", buf[3]);
+		return 0;
+	}
+}
+
 static int set_property_on_fg(struct smbchg_chip *chip,
 		enum power_supply_property prop, int val)
 {
@@ -1443,6 +1477,13 @@ static int smbchg_charging_en(struct smbchg_chip *chip, bool en)
 		if (asus_charger_limit_percentage <= batt_cap) {
 			pr_info("ftm mode. current limit: %d, current capacity: %d. force disable charging\n",
 					asus_charger_limit_percentage, batt_cap);
+			en = false;
+			asus_Dual_Disable();
+		}
+	} else if (asus_demoapp_charger_limit_en && enableADF_check()) {
+		// demoapp charger limit is fixed as 60%. force disable charging if battery capacity is larger than 60
+		if (batt_cap >= 60) {
+			pr_info("stop charging due to demoapp requirement. current capacity level: %d%% against 60%%\n", batt_cap);
 			en = false;
 			asus_Dual_Disable();
 		}
@@ -8897,11 +8938,20 @@ static void asus_thermal_policy(struct smbchg_chip *chip) {
 	int chg_temp;
 	int chg1_temp = us5587_read_pmi8952_thermal();
 	int chg2_temp = us5587_read_smb1351_thermal();
+	int batt_cap = get_prop_batt_capacity(chip);
 
 	if (asus_disable_thermal_policy) {
 		chip->asus_thermal_policy_flag = asus_thermal_level0;
 		return;
 	}
+	if (asus_demoapp_charger_limit_en && enableADF_check()) {
+		if (batt_cap >= 60) {
+			smbchg_charging_en(chip, false);
+			queue_delayed_work(smbchg_wq, &chip->asus_thermal_policy_work, msecs_to_jiffies(10500));
+			return;
+		}
+	}
+
 	pr_info("pmi8952: %d C, smb1351: %d C againts T1: %d C, T2: %d C, T3: %d C\n", chg1_temp,
 		chg2_temp, asus_therm_t1, asus_therm_t2, asus_therm_t3);
 	chg_temp = (chg1_temp >= chg2_temp) ? chg1_temp : chg2_temp;
@@ -9034,6 +9084,15 @@ static void asus_JEITA_rule(struct smbchg_chip *chip) {
 			(batt_cap <= 1 && asus_charger_limit_percentage <= 20))
 			smbchg_charging_en(chip, true);
 		else if (asus_charger_limit_percentage <= batt_cap) {
+			smbchg_charging_en(chip, false);
+			goto skip_jeita_setting;
+		}
+	} else if (asus_demoapp_charger_limit_en && enableADF_check()) {
+		// demoapp charger limit is fixed as 60%. re-charge only when battery capacity is lower than 55%
+		if ( batt_cap <= 55 ) {
+			pr_info("demo app mode. re-charge since current capacity level: %d%% lower than 55%%\n", batt_cap);
+			smbchg_charging_en(chip, true);
+		} else if (batt_cap >= 60) {
 			smbchg_charging_en(chip, false);
 			goto skip_jeita_setting;
 		}

@@ -93,9 +93,7 @@ static int diag_enable = 0;
 //ASUS_BSP--- "[USB][NA][Spec] add diag enable support in kernel"
 extern int getMACConnect(void);
 extern int getHostTypeChanged(void);
-extern int getDetectHostFinished(void);
 extern void resetHostTypeChanged(void);
-extern void resetDetectHostFinished(void);
 
 /* Default vendor and product IDs, overridden by userspace */
 #define VENDOR_ID		0x18D1
@@ -507,10 +505,6 @@ static void android_work(struct work_struct *data)
 	} else {
 		pr_info("%s: did not send uevent (%d %d %p)\n", __func__,
 			 dev->connected, dev->sw_connected, cdev->config);
-	}
-	if (!dev->connected) {
-		if (getDetectHostFinished())
-			resetDetectHostFinished();
 	}
 }
 

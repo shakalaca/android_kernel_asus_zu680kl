@@ -29,6 +29,8 @@ extern bool timedMeasure;
 extern bool ioctrl_close;
 extern bool repairing_state;
 
+extern bool CSCmode;
+
 static uint16_t debug_raw_range = 0;
 static uint16_t debug_raw_confidence = 0;
 
@@ -256,6 +258,10 @@ int Olivia_device_Load_Calibration_Value(struct msm_laser_focus_ctrl_t *dev_t){
 
 	/* Read Calibration data, addr is swapped */
 	indirect_addr = 0x10C0;
+
+	//notice that CSCmode changed at running time
+	if(CSCmode)
+		gotKdata = false;
 
 	if(!gotKdata){
 		status = Larua_Read_Calibration_Data_From_File(data, SIZE_OF_OLIVIA_CALIBRATION_DATA+CONFIDENCE_LENGTH);

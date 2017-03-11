@@ -22,6 +22,7 @@
 
 int g_factory = 0;			//default for shipping
 bool timedMeasure = true; //default for shipping
+bool CSCmode = false;
 
 uint16_t Laser_log_cnt=0;
 //Laser vars ---
@@ -430,6 +431,58 @@ int mutex_ctrl(struct msm_laser_focus_ctrl_t *dev_t, int ctrl)
 
 	return rc;;
 }
+
+
+
+static ssize_t Laser_CSCmode_write(struct file *filp, const char __user *buff, size_t len, loff_t *data)
+{
+	int val;
+	char messages[8]="";
+	if (len > 8)	len = 8;
+
+	if (copy_from_user(messages, buff, len)) {
+		printk("%s commond fail !!\n", __func__);
+		return -EFAULT;
+	}
+	val = (int)simple_strtol(messages, NULL, 10);
+
+
+	if(val)
+		CSCmode = true;
+	else
+		CSCmode = false;
+
+	printk("Laser CSCmode(%d)\n",CSCmode);
+	
+	return len;
+}
+
+
+int Laser_CSCmode_read(struct seq_file *buf, void *v)
+{
+
+	seq_printf(buf,"CSCmode(%d)\n", (int)CSCmode);
+	
+       return 0;
+}
+
+int Laser_CSCmode_open(struct inode *inode, struct  file *file)
+{
+        return single_open(file, Laser_CSCmode_read, NULL);
+}
+
+const struct file_operations Laser_CSCmode_fops = {
+        .owner = THIS_MODULE,
+        .open = Laser_CSCmode_open,
+        .write = Laser_CSCmode_write,
+        .read = seq_read,
+        .llseek = seq_lseek,
+        .release = single_release,
+};
+
+
+
+
 
 static ssize_t dump_Laser_value_check_write(struct file *filp, const char __user *buff, size_t len, loff_t *data)
 {
@@ -1316,6 +1369,7 @@ void HEPTAGON_create_proc_file(void)
 	proc(DEVICE_DEBUG_VALUE9, 0664, &dump_debug_Kvalue9_fops);
 	proc(DEVICE_VALUE_CHECK, 0664, &dump_Laser_value_check_fops);
 	//for ce-
+	proc(DEVICE_CSC_MODE, 0664, &Laser_CSCmode_fops);
 
 	//for dit+
 	proc(DEVICE_IOCTL_SET_K, 0664, &laser_focus_set_K_fops);

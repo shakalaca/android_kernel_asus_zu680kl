@@ -2207,6 +2207,10 @@ void resume_console(void)
 			}
 			gic_irq_cnt = 0;  //clear log count
 		}
+		if (gpio_resume){
+			ASUSEvtlog("[PM] GPIO triggered: %d\n", gpio_resume);
+			gpio_resume = 0; // reset gpio resume
+		}
 		pm_pwrcs_ret = 0;
 	}
 	//[---]Show GPIO,IRQ, SPMI wakeup information in AsusEvtlog

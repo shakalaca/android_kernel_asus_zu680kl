@@ -549,10 +549,7 @@ static int __init proc_asusdebug_init(void)
 	init_completion(&SubSys_C_Complete);
 	/*ASUS-BBSP SubSys Health Record---*/
 
-	ASUSEvtlog_workQueue  = create_singlethread_workqueue("ASUSEVTLOG_WORKQUEUE");
-
+	ASUSEvtlog_workQueue  = alloc_workqueue("ASUSEVTLOG_WORKQUEUE" , __WQ_ORDERED | WQ_FREEZABLE | WQ_UNBOUND | WQ_MEM_RECLAIM, 1);
 	return 0;
 }
 module_init(proc_asusdebug_init);
-
-

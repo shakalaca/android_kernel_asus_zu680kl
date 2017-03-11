@@ -241,7 +241,7 @@
 				<0x3 0xc0 0x1>;
 			interrupt-names = "sc-irq", "play-irq";
 			qcom,play-mode = "direct";
-			qcom,wave-play-rate-us = <5263>;
+			qcom,wave-play-rate-us = <4250>;
 			qcom,actuator-type = "lra";
 			qcom,wave-shape = "square";
 			qcom,vmax-mv = <2000>;

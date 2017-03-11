@@ -1069,7 +1069,14 @@ static int enableADF_check(void)
 	char buf[4] = {0, 0, 0, 0};
 	struct file *fd;
 
-	mm_segment_t old_fs = get_fs();
+	mm_segment_t old_fs;
+
+#ifdef CN_IMAGE
+	pr_info("enableADF_check always pass in CN sku\n");
+	return 1;
+#endif
+
+	old_fs = get_fs();
 	set_fs(KERNEL_DS);
 	fd = filp_open("/ADF/ADF", O_RDONLY, 0);
 

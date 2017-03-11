@@ -574,6 +574,8 @@ static void create_rgbSensor_dump_proc_file(void)
 		.owner = THIS_MODULE,
 		.open =  rgbSensor_dump_proc_open,
 		.read = seq_read,
+		.llseek = seq_lseek,
+		.release = single_release,
 	};
 	struct proc_dir_entry *proc_file = proc_create("driver/rgbSensor_dump", 0444, NULL, &proc_fops);
 
@@ -606,6 +608,8 @@ static void create_rgbSensor_status_proc_file(void)
 		.owner = THIS_MODULE,
 		.open =  rgbSensor_status_proc_open,
 		.read = seq_read,
+		.llseek = seq_lseek,
+		.release = single_release,
 	};
 	struct proc_dir_entry *proc_file = proc_create("driver/rgbSensor_status", 0444, NULL, &proc_fops);
 	if (!proc_file) {
@@ -648,6 +652,8 @@ static void create_asusRgbCalibEnable_proc_file(void)
 		.open =  asusRgbCalibEnable_proc_open,
 		.write = asusRgbCalibEnable_proc_write,
 		.read = seq_read,
+		.llseek = seq_lseek,
+		.release = single_release,
 	};
 	struct proc_dir_entry *proc_file = proc_create("driver/asusRgbCalibEnable", 0664, NULL, &proc_fops);
 
@@ -701,6 +707,8 @@ static void create_asusRgbDebug_proc_file(void)
 		.open =  asusRgbDebug_proc_open,
 		.write = asusRgbDebug_proc_write,
 		.read = seq_read,
+		.llseek = seq_lseek,
+		.release = single_release,
 	};
 	struct proc_dir_entry *proc_file = proc_create("driver/asusRgbDebug", 0664, NULL, &proc_fops);
 
@@ -746,6 +754,8 @@ static void create_asusRgbSetIT_proc_file(void)
 		.open =  asusRgbSetIT_proc_open,
 		.write = asusRgbSetIT_proc_write,
 		.read = seq_read,
+		.llseek = seq_lseek,
+		.release = single_release,
 	};
 	struct proc_dir_entry *proc_file = proc_create("driver/asusRgbSetIT", 0664, NULL, &proc_fops);
 
@@ -798,6 +808,8 @@ static void create_rgbSensor_enable_proc_file(void)
 		.open =  rgbSensor_enable_proc_open,
 		.write = rgbSensor_enable_proc_write,
 		.read = seq_read,
+		.llseek = seq_lseek,
+		.release = single_release,
 	};
 	struct proc_dir_entry *proc_file = proc_create("driver/rgbSensor_enable", 0664, NULL, &proc_fops);
 
@@ -826,6 +838,8 @@ static void create_rgbSensor_update_calibration_data_proc_file(void)
 		.owner = THIS_MODULE,
 		.open =  rgbSensor_update_calibration_data_proc_open,
 		.read = seq_read,
+		.llseek = seq_lseek,
+		.release = single_release,
 	};
 	struct proc_dir_entry *proc_file = proc_create("driver/rgbSensor_update_calibration_data", 0440, NULL, &proc_fops);
 
@@ -884,6 +898,8 @@ static void create_rgbSensor_itTime_proc_file(void)
 		.open =  rgbSensor_itTime_proc_open,
 		.write = rgbSensor_itTime_proc_write,
 		.read = seq_read,
+		.llseek = seq_lseek,
+		.release = single_release,
 	};
 	struct proc_dir_entry *proc_file = proc_create("driver/rgbSensor_itTime", 0664, NULL, &proc_fops);
 
@@ -913,6 +929,8 @@ static void create_rgbSensor_raw_r_proc_file(void)
 		.owner = THIS_MODULE,
 		.open =  rgbSensor_raw_r_proc_open,
 		.read = seq_read,
+		.llseek = seq_lseek,
+		.release = single_release,
 	};
 	struct proc_dir_entry *proc_file = proc_create("driver/rgbSensor_raw_r", 0444, NULL, &proc_fops);
 
@@ -942,6 +960,8 @@ static void create_rgbSensor_raw_g_proc_file(void)
 		.owner = THIS_MODULE,
 		.open =  rgbSensor_raw_g_proc_open,
 		.read = seq_read,
+		.llseek = seq_lseek,
+		.release = single_release,
 	};
 	struct proc_dir_entry *proc_file = proc_create("driver/rgbSensor_raw_g", 0444, NULL, &proc_fops);
 
@@ -971,6 +991,8 @@ static void create_rgbSensor_raw_b_proc_file(void)
 		.owner = THIS_MODULE,
 		.open =  rgbSensor_raw_b_proc_open,
 		.read = seq_read,
+		.llseek = seq_lseek,
+		.release = single_release,
 	};
 	struct proc_dir_entry *proc_file = proc_create("driver/rgbSensor_raw_b", 0444, NULL, &proc_fops);
 
@@ -1000,6 +1022,8 @@ static void create_rgbSensor_raw_w_proc_file(void)
 		.owner = THIS_MODULE,
 		.open =  rgbSensor_raw_w_proc_open,
 		.read = seq_read,
+		.llseek = seq_lseek,
+		.release = single_release,
 	};
 	struct proc_dir_entry *proc_file = proc_create("driver/rgbSensor_raw_w", 0444, NULL, &proc_fops);
 
@@ -1029,6 +1053,8 @@ static void create_rgbSensor_r_proc_file(void)
 		.owner = THIS_MODULE,
 		.open =  rgbSensor_r_proc_open,
 		.read = seq_read,
+		.llseek = seq_lseek,
+		.release = single_release,
 	};
 	struct proc_dir_entry *proc_file = proc_create("driver/rgbSensor_r", 0444, NULL, &proc_fops);
 
@@ -1058,6 +1084,8 @@ static void create_rgbSensor_g_proc_file(void)
 		.owner = THIS_MODULE,
 		.open =  rgbSensor_g_proc_open,
 		.read = seq_read,
+		.llseek = seq_lseek,
+		.release = single_release,
 	};
 	struct proc_dir_entry *proc_file = proc_create("driver/rgbSensor_g", 0444, NULL, &proc_fops);
 
@@ -1087,6 +1115,8 @@ static void create_rgbSensor_b_proc_file(void)
 		.owner = THIS_MODULE,
 		.open =  rgbSensor_b_proc_open,
 		.read = seq_read,
+		.llseek = seq_lseek,
+		.release = single_release,
 	};
 	struct proc_dir_entry *proc_file = proc_create("driver/rgbSensor_b", 0444, NULL, &proc_fops);
 
@@ -1116,6 +1146,8 @@ static void create_rgbSensor_w_proc_file(void)
 		.owner = THIS_MODULE,
 		.open =  rgbSensor_w_proc_open,
 		.read = seq_read,
+		.llseek = seq_lseek,
+		.release = single_release,
 	};
 	struct proc_dir_entry *proc_file = proc_create("driver/rgbSensor_w", 0444, NULL, &proc_fops);
 

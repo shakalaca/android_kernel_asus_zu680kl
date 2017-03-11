@@ -168,6 +168,7 @@
 #define TLMMV4_QDSD_DRV_MASK			0x7
 
 extern int suspend_flag;
+int gpio_resume = 0;
 
 struct msm_sdc_regs {
 	unsigned long pull_mask;
@@ -779,7 +780,7 @@ static irqreturn_t msm_tlmm_gp_handle_irq(int irq, struct msm_tlmm_irq_chip *ic)
 		dev_dbg(ic->dev, "hwirq in bit mask %d\n", (unsigned int)i);
 		if (msm_tlmm_get_intr_status(ic, i)) {
 			if(suspend_flag){
-                                ASUSEvtlog("[PM] GPIO triggered: %d\n",(unsigned int)i);
+				gpio_resume = (unsigned int)i;
 				dev_err(ic->dev, "hwirw %d fired\n", (unsigned int)i);
                                 suspend_flag = 0;
 			}

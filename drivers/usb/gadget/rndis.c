@@ -407,7 +407,7 @@ static int gen_ndis_query_resp(int configNr, u32 OID, u8 *buf,
 
 	/* mandatory */
 	case RNDIS_OID_GEN_RCV_NO_BUFFER:
-		pr_debug("%s: RNDIS_OID_GEN_RCV_NO_BUFFER\n", __func__);
+		//pr_debug("%s: RNDIS_OID_GEN_RCV_NO_BUFFER\n", __func__);
 		if (stats) {
 			*outbuf = cpu_to_le32(stats->rx_dropped);
 			retval = 0;

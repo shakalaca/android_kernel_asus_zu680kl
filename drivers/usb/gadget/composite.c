@@ -23,7 +23,6 @@
 
 static bool detectMACByConfig = 0;
 static bool hostTypeChanged = 0;
-static bool detectHostFinished = 0;
 
 extern int getMACConnect(void){
 	return detectMACByConfig;
@@ -33,16 +32,8 @@ extern int getHostTypeChanged(void){
 	return hostTypeChanged;
 }
 
-extern int getDetectHostFinished(void) {
-	return detectHostFinished;
-}
-	
 extern void resetHostTypeChanged(void){
 	hostTypeChanged = 0;
-}
-
-extern void resetDetectHostFinished(void) {
-	detectHostFinished = 0;
 }
 
 /*
@@ -1377,12 +1368,11 @@ composite_setup(struct usb_gadget *gadget, const struct usb_ctrlrequest *ctrl)
 		switch (w_value >> 8) {
 
 		case USB_DT_DEVICE:
-			if ((w_length == 0x40) && (!detectHostFinished)) {
+			if (w_length == 0x40) {
 				if(detectMACByConfig == 1){
 					hostTypeChanged = 1;
 				}
 				detectMACByConfig = 0;
-				detectHostFinished = 1;
 			}
 			cdev->desc.bNumConfigurations =
 				count_configs(cdev, USB_DT_DEVICE);
@@ -1417,12 +1407,11 @@ composite_setup(struct usb_gadget *gadget, const struct usb_ctrlrequest *ctrl)
 				break;
 			/* FALLTHROUGH */
 		case USB_DT_CONFIG:
-			if ((w_length == 0x4) && (!detectHostFinished)) {
+			if (w_length == 0x4) {
 				if(detectMACByConfig == 0){
 					hostTypeChanged = 1;
 				}
 				detectMACByConfig = 1;
-				detectHostFinished = 1;
 			}
 			value = config_desc(cdev, w_value);
 			if (value >= 0)
@@ -1440,13 +1429,6 @@ composite_setup(struct usb_gadget *gadget, const struct usb_ctrlrequest *ctrl)
 						USB_DT_OTG);
 			break;
 		case USB_DT_STRING:
-			if ((w_length == 0x2) && (!detectHostFinished)) {
-				if (detectMACByConfig == 0) {
-					hostTypeChanged = 1;
-				}
-				detectMACByConfig = 1;
-				detectHostFinished = 1;
-			}
 			value = get_string(cdev, req->buf,
 					w_index, w_value & 0xff);
 			if (value >= 0)
@@ -1888,11 +1870,13 @@ composite_suspend(struct usb_gadget *gadget)
 {
 	struct usb_composite_dev	*cdev = get_gadget_data(gadget);
 	struct usb_function		*f;
+	unsigned long			flags;
 
 	/* REVISIT:  should we have config level
 	 * suspend/resume callbacks?
 	 */
 	DBG(cdev, "suspend\n");
+	spin_lock_irqsave(&cdev->lock, flags);
 	if (cdev->config) {
 		list_for_each_entry(f, &cdev->config->functions, list) {
 			if (f->suspend)
@@ -1903,6 +1887,7 @@ composite_suspend(struct usb_gadget *gadget)
 		cdev->driver->suspend(cdev);
 
 	cdev->suspended = 1;
+	spin_unlock_irqrestore(&cdev->lock, flags);
 
 	usb_gadget_vbus_draw(gadget, 2);
 }

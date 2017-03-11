@@ -196,7 +196,7 @@ extern bool vgacon_text_force(void);
 #endif
 
 /*[+++][Power]Extern values for GPIO, IRQ, SPMI wakeup information for printk.c to Evtlog */
-extern int gpio_irq_cnt, gpio_resume_irq[8], gic_irq_cnt, gic_resume_irq[8];
+extern int gpio_irq_cnt, gpio_resume_irq[8], gic_irq_cnt, gic_resume_irq[8], gpio_resume;
 /*[---][Power]Extern values for GPIO, IRQ, SPMI wakeup information for printk.c to Evtlog */
 extern unsigned int pm_pwrcs_ret; /*[PM]Extern this flag represent dpm_suspend state for resume_console*/
 

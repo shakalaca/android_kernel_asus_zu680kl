@@ -17,6 +17,7 @@
 #include <linux/io.h>
 #include <linux/module.h>
 #include <linux/workqueue.h>
+#include <linux/delay.h>
 #include <sound/core.h>
 #include <sound/soc.h>
 #include <sound/soc-dapm.h>
@@ -73,6 +74,8 @@
 #define WSA8810_NAME_1 "wsa881x.20170211"
 #define WSA8810_NAME_2 "wsa881x.20170212"
 
+static DEFINE_MUTEX(spk_playing_lock);
+
 enum btsco_rates {
 	RATE_8KHZ_ID,
 	RATE_16KHZ_ID,
@@ -105,7 +108,7 @@ static int msm_proxy_rx_ch = 2;
 static int spk_media_vol = 0;
 static bool isSpkOn = false;
 static void *adsp_state_notifier;
-extern void notify_speaker_status(int);
+extern void notify_speaker_status(int, int);
 
 static int msm8952_enable_codec_mclk(struct snd_soc_codec *codec, int enable,
 					bool dapm);
@@ -933,30 +936,30 @@ static int speaker_media_vol_get(struct snd_kcontrol *kcontrol,
 static int speaker_media_vol_put(struct snd_kcontrol *kcontrol,
 				struct snd_ctl_elem_value *ucontrol)
 {
-	struct snd_soc_codec *codec = snd_kcontrol_chip(kcontrol);
-	struct snd_soc_card *card = codec->card;
-	struct msm8952_asoc_mach_data *pdata = snd_soc_card_get_drvdata(card);
-
+	if (spk_media_vol == ucontrol->value.integer.value[0]) {
+		pr_info("%s: the same media volume - do nothing\n",
+				__func__);
+		return 0;
+	}
+	mutex_lock(&spk_playing_lock);
 	spk_media_vol = ucontrol->value.integer.value[0];
 	pr_info("%s: speaker_media_vol_put = %d\n", __func__,
 						spk_media_vol);
 	if (spk_media_vol >= CAP_NOISE_VOL && isSpkOn) {
-		/* notify cap sensor threshold up after 2mins */
-		pr_info("kcontrol: notify cap sensor threshold up \n");
-		schedule_delayed_work(&pdata->cap_noise_dwork,
-				msecs_to_jiffies(CAP_STARTWORK_TIMEOUT));
+		/* notify cap sensor threshold up */
+		pr_info("kcontrol: notify cap sensor threshold up\n");
+		notify_speaker_status(1, spk_media_vol);
 
 	} else if (isSpkOn) {
 		/* notify cap sensor threshold down right now*/
 		pr_info("kcontrol: notify cap sensor threshold down\n");
-		cancel_delayed_work_sync(&pdata->cap_noise_dwork);
-		notify_speaker_status(0);
+		notify_speaker_status(1, spk_media_vol);
 
 	} else {
 		/* Do nothing; Not speaker playback case */
 		pr_info("kcontrol: notify cap sensor do nothing\n");
 	}
-
+	mutex_unlock(&spk_playing_lock);
 	return 0;
 }
 
@@ -1680,7 +1683,9 @@ void msm_quat_mi2s_snd_shutdown(struct snd_pcm_substream *substream)
 	struct snd_soc_card *card = rtd->card;
 	struct msm8952_asoc_mach_data *pdata = snd_soc_card_get_drvdata(card);
 
+	mutex_lock(&spk_playing_lock);
 	isSpkOn =false;
+	mutex_unlock(&spk_playing_lock);
 	pr_debug("%s(): substream = %s  stream = %d, ext_pa = %d\n", __func__,
 		 substream->name, substream->stream, pdata->ext_pa);
 
@@ -1697,9 +1702,9 @@ void msm_quat_mi2s_snd_shutdown(struct snd_pcm_substream *substream)
 			return;
 		}
 	}
-	pr_info("%s: notify cap threshold down\n", __func__);
+	pr_info("%s: notify cap threshold Normal\n", __func__);
 	cancel_delayed_work_sync(&pdata->cap_noise_dwork);
-	notify_speaker_status(0);
+	notify_speaker_status(0, spk_media_vol);
 }
 
 int msm_prim_auxpcm_startup(struct snd_pcm_substream *substream)
@@ -1789,13 +1794,11 @@ int msm_quat_mi2s_snd_startup(struct snd_pcm_substream *substream)
 		if (ret < 0)
 			pr_err("%s: set fmt cpu dai failed\n", __func__);
 	}
+	mutex_lock(&spk_playing_lock);
 	isSpkOn = true;
-	if (spk_media_vol >= CAP_NOISE_VOL) {
-		pr_info("%s: notify cap threshold up\n", __func__);
-		schedule_delayed_work(&pdata->cap_noise_dwork,
-				msecs_to_jiffies(CAP_STARTWORK_TIMEOUT));
-	}
-
+	pr_info("%s: notify cap threshold up\n", __func__);
+	notify_speaker_status(1, spk_media_vol);
+	mutex_unlock(&spk_playing_lock);
 	return ret;
 
 err:
@@ -2234,7 +2237,7 @@ out:
 static void cap_noise_work(struct work_struct *work)
 {
 	pr_info("cap_noise_work: notify cap threshold up\n");
-	notify_speaker_status(1);
+	notify_speaker_status(1, spk_media_vol);
 
 }
 
@@ -2502,6 +2505,7 @@ static int msm8952_asoc_machine_probe(struct platform_device *pdev)
 
 	INIT_DELAYED_WORK(&pdata->hs_detect_dwork, hs_detect_work);
 	INIT_DELAYED_WORK(&pdata->cap_noise_dwork, cap_noise_work);
+
 	atomic_set(&pdata->clk_ref.quat_mi2s_clk_ref, 0);
 	atomic_set(&pdata->clk_ref.auxpcm_mi2s_clk_ref, 0);
 	card = populate_snd_card_dailinks(&pdev->dev);

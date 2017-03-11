@@ -17,14 +17,26 @@ enum {
     SENSOR3_THRESHOLD = 0x04,
     STANDBY_CHANNEL   = 0x05,
     SAMPLE_CONFIG     = 0x06,
-    SAMPLE_SELECTION  = 0x08,
+    SAMPLE_SELECTION1 = 0x08,
+    SAMPLE_SELECTION2 = 0x0E,
     MAX_DURATION      = 0x0b,
-    REVISION          = 0x22
+    REVISION          = 0x22,
+    ACQUISITION       = 0x0D,
+    PRECHARGE         = 0x0C
+};
+
+enum {
+    NORMAL,
+    WORKAROUND1,
+    WORKAROUND2
 };
 
 static int BACK;
 static int APP_SWITCH;
-static int change_settings;
+static int calibration = 0;
+static int target_state = NORMAL;
+static int current_state = NORMAL;
+static int current_samples;
 
 //key code for app switch
 #define KEY_APP_SWITCH 580
@@ -36,9 +48,14 @@ struct cap12LF1552_data {
     struct i2c_client *client;
     struct attribute_group attrs;
     struct workqueue_struct *cap_wq;
+    struct workqueue_struct *wa_wq;
     struct delayed_work work;
-    struct delayed_work music_work;
     struct delayed_work calibration_work;
+    struct delayed_work normal_to_wa1_work;
+    struct delayed_work normal_to_wa2_work;
+    struct delayed_work wa1_to_wa2_work;
+    struct delayed_work wa2_to_wa1_work;
+    struct delayed_work wa_to_normal_work;
     struct input_dev *input_back;
     struct input_dev *input_app_switch;
     int enable;
@@ -52,8 +69,9 @@ struct cap12LF1552_data {
 };
 
 struct cap12LF1552_data *cap_data;
-int prev_val;
-int irq_enabled;
+static int prev_val;
+static int irq_enabled;
+static int new_fw = 0;
 static DEFINE_MUTEX(cap_mtx);
 
 // function declarations

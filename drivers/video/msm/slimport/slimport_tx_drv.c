@@ -5141,6 +5141,7 @@ void SP_CTRL_HDCP_Process(void)
 {
 	BYTE c;
 	static BYTE ds_vid_stb_cntr = 0;
+	static BYTE hdcp_check_cnt = 0;
 	#ifdef Redo_HDCP
 	static BYTE HDCP_fail_count = 0;
 	#endif
@@ -5149,6 +5150,7 @@ void SP_CTRL_HDCP_Process(void)
 	switch(hdcp_process_state) {
 	case HDCP_PROCESS_INIT:
 		hdcp_process_state = HDCP_CAPABLE_CHECK;
+		hdcp_check_cnt = 0;
 		#ifdef Redo_HDCP
 		HDCP_fail_count = 0;
 		#endif
@@ -5192,10 +5194,12 @@ void SP_CTRL_HDCP_Process(void)
 		hdcp_process_state = HDCP_WAITTING_FINISH;
 		break;
 	case HDCP_WAITTING_FINISH:
+		hdcp_check_cnt++;
 		sp_read_reg(SP_TX_PORT0_ADDR, SP_TX_HDCP_STATUS, &c);
-		if(c&0x20)
+		if ((c & 0x20) || (hdcp_check_cnt >= 50))
 		{
 			debug_puts("hdcp_auth_failed\n");
+			hdcp_check_cnt = 0;
 			hdcp_process_state = HDCP_FAILE;
 		}
 		break;

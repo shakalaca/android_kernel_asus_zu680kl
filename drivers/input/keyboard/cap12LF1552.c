@@ -22,10 +22,14 @@ DEVICE_ATTR(threshold2, 0644, show_attrs_handler, store_attrs_handler);
 DEVICE_ATTR(standby_channel, 0644, show_attrs_handler, store_attrs_handler);
 DEVICE_ATTR(sampling_configuration, 0644, show_attrs_handler, store_attrs_handler);
 DEVICE_ATTR(queue_control, 0644, show_attrs_handler, store_attrs_handler);
-DEVICE_ATTR(addititonal_sample_cap_selection, 0644, show_attrs_handler, store_attrs_handler);
+DEVICE_ATTR(addititonal_sample_cap_selection_1, 0644, show_attrs_handler, store_attrs_handler);
 DEVICE_ATTR(background_noise, 0644, show_attrs_handler, store_attrs_handler);
 DEVICE_ATTR(sensitivity, 0644, show_attrs_handler, store_attrs_handler);
 DEVICE_ATTR(calibration, 0644, show_attrs_handler, NULL);
+DEVICE_ATTR(addititonal_sample_cap_selection_2, 0644, show_attrs_handler, store_attrs_handler);
+DEVICE_ATTR(acquisition, 0644, show_attrs_handler, store_attrs_handler);
+DEVICE_ATTR(precharge, 0644, show_attrs_handler, store_attrs_handler);
+DEVICE_ATTR(state, 0644, show_attrs_handler, NULL);
 
 static struct attribute *cap12LF1552_attrs[] = {
     &dev_attr_virtual_keys.attr,
@@ -36,10 +40,14 @@ static struct attribute *cap12LF1552_attrs[] = {
     &dev_attr_standby_channel.attr,
     &dev_attr_sampling_configuration.attr,
     &dev_attr_queue_control.attr,
-    &dev_attr_addititonal_sample_cap_selection.attr,
+    &dev_attr_addititonal_sample_cap_selection_1.attr,
+    &dev_attr_addititonal_sample_cap_selection_2.attr,
     &dev_attr_background_noise.attr,
     &dev_attr_sensitivity.attr,
     &dev_attr_calibration.attr,
+    &dev_attr_acquisition.attr,
+    &dev_attr_precharge.attr,
+    &dev_attr_state.attr,
     NULL
 };
 
@@ -63,19 +71,35 @@ static int select_interrupt_pin_status(struct device *dev) {
 }
 
 static int cap12LF1552_init_sensor(struct i2c_client *client) {
-    unsigned int rc = 0;
+    unsigned int ver = 0;
 
+    ver = cap12LF1552_read_reg(client, REVISION);
+
+    if (ver == 0x10) {
+        new_fw = 0;
+        cap12LF1552_write_reg(client, SAMPLE_CONFIG, 0x0A);
+        current_samples = 0x0A;
+    } else if (ver == 0x11) {
+        new_fw = 1;
+        current_samples = 0x07;
+        cap12LF1552_write_reg(client, SAMPLE_CONFIG, 0x07);
+        cap12LF1552_write_reg(client, SAMPLE_SELECTION2, 0x07);
+        cap12LF1552_write_reg(client, ACQUISITION, 0x18);
+        cap12LF1552_write_reg(client, PRECHARGE, 0x18);
+    } else {
+        return -ENXIO; // not CAP12LF1552
+    }
     cap12LF1552_write_reg(client, SLEEP_CONTROL, 0x00);
     cap12LF1552_write_reg(client, STANDBY_CHANNEL, 0x07);
-    cap12LF1552_write_reg(client, SAMPLE_SELECTION, 0x07);
+    cap12LF1552_write_reg(client, SAMPLE_SELECTION1, 0x07);
     cap12LF1552_write_reg(client, MAX_DURATION, 0x30);
+    cap12LF1552_write_reg(client, SENSOR1_THRESHOLD, 0x64);
+    cap12LF1552_write_reg(client, SENSOR2_THRESHOLD, 0x64);
 
-    rc = cap12LF1552_read_reg(client, REVISION);
-    if (rc != 0x10) return -ENXIO; // not CAP12LF1552
-    rc = cap12LF1552_read_reg(client, SENSOR_STATUS);
-    if (rc == 0x3C) return -ENXIO; // IQS263
-    return rc;
+    cap12LF1552_read_reg(client, SENSOR_STATUS);
+    return ver;
 }
+
 static irqreturn_t cap12LF1552_interrupt_handler(int irq, void *dev) {
     struct cap12LF1552_data *data = i2c_get_clientdata(dev);
     queue_delayed_work(data->cap_wq, &data->work, 0);
@@ -111,6 +135,7 @@ static int cap12LF1552_config_irq(struct i2c_client *client) {
         goto config_fail;
     }
 
+    cap12LF1552_read_reg(client, SENSOR_STATUS);
     return 0;
 
 config_fail:
@@ -140,40 +165,130 @@ static int cap12LF1552_fb_notifier_cb(struct notifier_block *self,
 }
 #endif
 
-static void cap12LF1552_music_settings(struct work_struct *work) {
+static void normal_to_WA1(struct work_struct *work) {
     struct cap12LF1552_data *data =
-        container_of((struct delayed_work *)work, struct cap12LF1552_data, music_work);
+        container_of((struct delayed_work *)work, struct cap12LF1552_data, normal_to_wa1_work);
     mutex_lock(&cap_mtx);
-    if (change_settings) {
-        cap12LF1552_write_reg(data->client, SAMPLE_CONFIG, 0x07);
-        cap12LF1552_write_reg(data->client, SENSOR1_THRESHOLD, 0xC8);
-        cap12LF1552_write_reg(data->client, SENSOR2_THRESHOLD, 0xC8);
+    cap12LF1552_write_reg(data->client, SAMPLE_CONFIG, 0x0A);
+    current_samples = 0x0A;
+    cap12LF1552_write_reg(data->client, SENSOR1_THRESHOLD, 0x96);
+    cap12LF1552_write_reg(data->client, SENSOR2_THRESHOLD, 0x96);
+    if (!calibration) {
+        calibration = 1;
         schedule_delayed_work(&data->calibration_work, msecs_to_jiffies(5000));
-        CAP_DEBUG("Enter Workaround\n");
-    } else {
-        cancel_delayed_work_sync(&data->calibration_work);
-        cap12LF1552_write_reg(data->client, SAMPLE_CONFIG, 0x0A);
-        mutex_unlock(&cap_mtx);
-        msleep(3000);
-        mutex_lock(&cap_mtx);
-        cap12LF1552_write_reg(data->client, SENSOR1_THRESHOLD, 0x96);
-        cap12LF1552_write_reg(data->client, SENSOR2_THRESHOLD, 0x96);
-        CAP_DEBUG("Leave Workaround\n");
     }
+    CAP_DEBUG("Workaround 1\n");
+    current_state = WORKAROUND1;
     mutex_unlock(&cap_mtx);
 }
 
-void notify_speaker_status(int music_on) {
-    change_settings = music_on;
-    schedule_delayed_work(&cap_data->music_work, 0);
+static void WA2_to_WA1(struct work_struct *work) {
+    struct cap12LF1552_data *data =
+        container_of((struct delayed_work *)work, struct cap12LF1552_data, wa2_to_wa1_work);
+    mutex_lock(&cap_mtx);
+    cap12LF1552_write_reg(data->client, SAMPLE_CONFIG, 0x0A);
+    current_samples = 0x0A;
+    cap12LF1552_write_reg(data->client, SENSOR1_THRESHOLD, 0x96);
+    cap12LF1552_write_reg(data->client, SENSOR2_THRESHOLD, 0x96);
+    if (!calibration) {
+        calibration = 1;
+        schedule_delayed_work(&data->calibration_work, msecs_to_jiffies(5000));
+    }
+    CAP_DEBUG("Workaround 1\n");
+    current_state = WORKAROUND1;
+    mutex_unlock(&cap_mtx);
+}
+
+static void normal_to_WA2(struct work_struct *work) {
+    struct cap12LF1552_data *data =
+        container_of((struct delayed_work *)work, struct cap12LF1552_data, normal_to_wa2_work);
+    mutex_lock(&cap_mtx);
+    cap12LF1552_write_reg(data->client, SAMPLE_CONFIG, 0x07);
+    current_samples = 0x07;
+    cap12LF1552_write_reg(data->client, SENSOR1_THRESHOLD, 0xA2);
+    cap12LF1552_write_reg(data->client, SENSOR2_THRESHOLD, 0xA2);
+    if (!calibration) {
+        calibration = 1;
+        schedule_delayed_work(&data->calibration_work, msecs_to_jiffies(5000));
+    }
+    CAP_DEBUG("Workaround 2\n");
+    current_state = WORKAROUND2;
+    mutex_unlock(&cap_mtx);
+}
+
+static void WA1_to_WA2(struct work_struct *work) {
+    struct cap12LF1552_data *data =
+        container_of((struct delayed_work *)work, struct cap12LF1552_data, wa1_to_wa2_work);
+    mutex_lock(&cap_mtx);
+    cap12LF1552_write_reg(data->client, SAMPLE_CONFIG, 0x07);
+    current_samples = 0x07;
+    cap12LF1552_write_reg(data->client, SENSOR1_THRESHOLD, 0xA2);
+    cap12LF1552_write_reg(data->client, SENSOR2_THRESHOLD, 0xA2);
+    if (!calibration) {
+        calibration = 1;
+        schedule_delayed_work(&data->calibration_work, msecs_to_jiffies(5000));
+    }
+    CAP_DEBUG("Workaround 2\n");
+    current_state = WORKAROUND2;
+    mutex_unlock(&cap_mtx);
+}
+
+static void WA_to_normal(struct work_struct *work) {
+    struct cap12LF1552_data *data =
+        container_of((struct delayed_work *)work, struct cap12LF1552_data, wa_to_normal_work);
+    mutex_lock(&cap_mtx);
+    cancel_delayed_work_sync(&data->calibration_work);
+    calibration = 0;
+    cap12LF1552_write_reg(data->client, SAMPLE_CONFIG, 0x0A);
+    current_samples = 0x0A;
+    mutex_unlock(&cap_mtx);
+    msleep(3000);
+    mutex_lock(&cap_mtx);
+    cap12LF1552_write_reg(data->client, SENSOR1_THRESHOLD, 0x64);
+    cap12LF1552_write_reg(data->client, SENSOR2_THRESHOLD, 0x64);
+    CAP_DEBUG("Normal mode\n");
+    current_state = NORMAL;
+    mutex_unlock(&cap_mtx);
+}
+
+void notify_speaker_status(int speaker_on, int level) {
+    if (!new_fw) {
+        mutex_lock(&cap_mtx);
+        if (!speaker_on && target_state != NORMAL) {
+            target_state = NORMAL;
+            queue_delayed_work(cap_data->wa_wq, &cap_data->wa_to_normal_work, 0);
+        } else if (speaker_on && level < 12) {
+            if (target_state == NORMAL) {
+                target_state = WORKAROUND1;
+                cancel_delayed_work(&cap_data->wa_to_normal_work);
+                queue_delayed_work(cap_data->wa_wq, &cap_data->normal_to_wa1_work, 0);
+            }
+            else if (target_state == WORKAROUND2) {
+                target_state = WORKAROUND1;
+                queue_delayed_work(cap_data->wa_wq, &cap_data->wa2_to_wa1_work, 0);
+            }
+        } else if (speaker_on && level >= 12) {
+            if (target_state == NORMAL) {
+                target_state = WORKAROUND2;
+                cancel_delayed_work(&cap_data->wa_to_normal_work);
+                queue_delayed_work(cap_data->wa_wq, &cap_data->normal_to_wa2_work, 0);
+            }
+            else if (target_state == WORKAROUND1) {
+                target_state = WORKAROUND2;
+                queue_delayed_work(cap_data->wa_wq, &cap_data->wa1_to_wa2_work, 0);
+            }
+        }
+        mutex_unlock(&cap_mtx);
+    }
 }
 EXPORT_SYMBOL(notify_speaker_status);
+
 
 static void calibration_work_function(struct work_struct *work) {
     struct cap12LF1552_data *data =
         container_of((struct delayed_work *)work, struct cap12LF1552_data, calibration_work);
     mutex_lock(&cap_mtx);
-    cap12LF1552_write_reg(data->client, SAMPLE_CONFIG, 0x07);
+    cap12LF1552_write_reg(data->client, SAMPLE_CONFIG, current_samples);
     CAP_DEBUG("calibration\n");
     schedule_delayed_work(&data->calibration_work, msecs_to_jiffies(5000));
     mutex_unlock(&cap_mtx);
@@ -185,14 +300,9 @@ static void cap12LF1552_work_function(struct work_struct *work) {
         container_of((struct delayed_work *)work, struct cap12LF1552_data, work);
 
     val = cap12LF1552_read_reg(data->client, SENSOR_STATUS);
-    if ((val & BACK) && (val & APP_SWITCH)) {
+    if (current_state != NORMAL && (val & BACK) && (val & APP_SWITCH)) {
         mutex_lock(&cap_mtx);
-        if (change_settings) {
-            cap12LF1552_write_reg(data->client, SAMPLE_CONFIG, 0x07);
-        }
-        else {
-            cap12LF1552_write_reg(data->client, SAMPLE_CONFIG, 0x0A);
-        }
+        cap12LF1552_write_reg(data->client, SAMPLE_CONFIG, current_samples);
         mutex_unlock(&cap_mtx);
         return;
     }
@@ -201,13 +311,13 @@ static void cap12LF1552_work_function(struct work_struct *work) {
         input_report_key(data->input_back, KEY_BACK, 1);
         input_sync(data->input_back);
         CAP_DEBUG("Press back key.\n");
-        if (change_settings)
+        if (calibration)
             cancel_delayed_work_sync(&data->calibration_work);
     } else if ((change & APP_SWITCH) && (val & APP_SWITCH)) {
         input_report_key(data->input_app_switch, KEY_APP_SWITCH, 1);
         input_sync(data->input_app_switch);
         CAP_DEBUG("Press recent apps key.\n");
-        if (change_settings)
+        if (calibration)
             cancel_delayed_work_sync(&data->calibration_work);
     } else {
         //key release
@@ -221,7 +331,7 @@ static void cap12LF1552_work_function(struct work_struct *work) {
             input_sync(data->input_app_switch);
             CAP_DEBUG("Release recent apps key.\n");
         }
-        if (change_settings)
+        if (calibration)
             schedule_delayed_work(&data->calibration_work, msecs_to_jiffies(5000));
     }
     prev_val = val;
@@ -269,10 +379,43 @@ static ssize_t show_attrs_handler(struct device *dev,
         ret = cap12LF1552_read_reg(client, 0x07);
         mutex_unlock(&cap_mtx);
         return snprintf(buf, 8, "0x%02X\n", ret);
-    } else if (!strcmp(attr_name, dev_attr_addititonal_sample_cap_selection.attr.name)) {
-        mutex_unlock(&cap_mtx);
+    } else if (!strcmp(attr_name, dev_attr_addititonal_sample_cap_selection_1.attr.name)) {
         ret = cap12LF1552_read_reg(client, 0x08);
+        mutex_unlock(&cap_mtx);
         return snprintf(buf, 8, "0x%02X\n", ret);
+    } else if (!strcmp(attr_name, dev_attr_addititonal_sample_cap_selection_2.attr.name)) {
+        if (!new_fw) {
+            mutex_unlock(&cap_mtx);
+            return snprintf(buf, 8, "0x00\n");
+        }
+        ret = cap12LF1552_read_reg(client, 0x0E);
+        mutex_unlock(&cap_mtx);
+        return snprintf(buf, 8, "0x%02X\n", ret);
+    } else if (!strcmp(attr_name, dev_attr_acquisition.attr.name)) {
+        if (!new_fw) {
+            mutex_unlock(&cap_mtx);
+            return snprintf(buf, 8, "0x00\n");
+        }
+        ret = cap12LF1552_read_reg(client, 0x0D);
+        mutex_unlock(&cap_mtx);
+        return snprintf(buf, 8, "0x%02X\n", ret);
+    } else if (!strcmp(attr_name, dev_attr_precharge.attr.name)) {
+        if (!new_fw) {
+            mutex_unlock(&cap_mtx);
+            return snprintf(buf, 8, "0x00\n");
+        }
+        ret = cap12LF1552_read_reg(client, 0x0C);
+        mutex_unlock(&cap_mtx);
+        return snprintf(buf, 8, "0x%02X\n", ret);
+    } else if (!strcmp(attr_name, dev_attr_state.attr.name)) {
+        ret = current_state;
+        mutex_unlock(&cap_mtx);
+        if (ret == NORMAL)
+            return snprintf(buf, 14, "Normal\n");
+        else if (ret == WORKAROUND1)
+            return snprintf(buf, 14, "Workaround 1\n");
+        else if (ret == WORKAROUND2)
+            return snprintf(buf, 14, "Workaround 2\n");
     } else if (!strcmp(attr_name, dev_attr_background_noise.attr.name)) {
         ret = cap12LF1552_read_reg(client, 0x09);
         mutex_unlock(&cap_mtx);
@@ -283,7 +426,7 @@ static ssize_t show_attrs_handler(struct device *dev,
         return snprintf(buf, 8, "0x%02X\n", ret);
     } else if (!strcmp(attr_name, dev_attr_calibration.attr.name)) {
         mutex_unlock(&cap_mtx);
-        return snprintf(buf, 8, "%d\n", change_settings);
+        return snprintf(buf, 8, "%d\n", calibration);
     }
 
     return 0;
@@ -329,8 +472,20 @@ static ssize_t store_attrs_handler(struct device *dev,
     } else if (!strcmp(attr_name, dev_attr_queue_control.attr.name)) {
         ret = cap12LF1552_write_reg(client, 0x07, value);
         mutex_unlock(&cap_mtx);
-    } else if (!strcmp(attr_name, dev_attr_addititonal_sample_cap_selection.attr.name)) {
+    } else if (!strcmp(attr_name, dev_attr_addititonal_sample_cap_selection_1.attr.name)) {
         ret = cap12LF1552_write_reg(client, 0x08, value);
+        mutex_unlock(&cap_mtx);
+    } else if (!strcmp(attr_name, dev_attr_addititonal_sample_cap_selection_2.attr.name)) {
+        if (new_fw)
+            ret = cap12LF1552_write_reg(client, 0x0E, value);
+        mutex_unlock(&cap_mtx);
+    } else if (!strcmp(attr_name, dev_attr_acquisition.attr.name)) {
+        if (new_fw)
+            ret = cap12LF1552_write_reg(client, 0x0D, value);
+        mutex_unlock(&cap_mtx);
+    } else if (!strcmp(attr_name, dev_attr_precharge.attr.name)) {
+        if (new_fw)
+            ret = cap12LF1552_write_reg(client, 0x0C, value);
         mutex_unlock(&cap_mtx);
     } else if (!strcmp(attr_name, dev_attr_background_noise.attr.name)) {
         ret = cap12LF1552_write_reg(client, 0x09, value);
@@ -393,9 +548,21 @@ static int cap12LF1552_probe(struct i2c_client *client, const struct i2c_device_
         goto probe_failed;
     }
 
+    data->wa_wq = create_singlethread_workqueue("wa_wq");
+    if(!data->wa_wq) {
+        CAP_DEBUG("Failed to create singlethread workqueue\n");
+        ret = -ENOMEM;
+        goto probe_failed;
+    }
+
+
     INIT_DELAYED_WORK(&data->work, cap12LF1552_work_function);
-    INIT_DELAYED_WORK(&data->music_work, cap12LF1552_music_settings);
     INIT_DELAYED_WORK(&data->calibration_work, calibration_work_function);
+    INIT_DELAYED_WORK(&data->normal_to_wa1_work, normal_to_WA1);
+    INIT_DELAYED_WORK(&data->normal_to_wa2_work, normal_to_WA2);
+    INIT_DELAYED_WORK(&data->wa2_to_wa1_work, WA2_to_WA1);
+    INIT_DELAYED_WORK(&data->wa1_to_wa2_work, WA1_to_WA2);
+    INIT_DELAYED_WORK(&data->wa_to_normal_work, WA_to_normal);
 
     data->client = client;
     i2c_set_clientdata(client, data);

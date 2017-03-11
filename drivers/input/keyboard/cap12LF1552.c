@@ -92,7 +92,7 @@ static int cap12LF1552_init_sensor(struct i2c_client *client) {
     cap12LF1552_write_reg(client, SLEEP_CONTROL, 0x00);
     cap12LF1552_write_reg(client, STANDBY_CHANNEL, 0x07);
     cap12LF1552_write_reg(client, SAMPLE_SELECTION1, 0x07);
-    cap12LF1552_write_reg(client, MAX_DURATION, 0x30);
+    cap12LF1552_write_reg(client, MAX_DURATION, 0x45);
     cap12LF1552_write_reg(client, SENSOR1_THRESHOLD, 0x64);
     cap12LF1552_write_reg(client, SENSOR2_THRESHOLD, 0x64);
 

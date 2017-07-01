@@ -213,7 +213,7 @@ static char imeta[META_PKT_SIZE] = {
 	0x00,
 	PWIL_U16(0x2),
 };
-
+//iris_meta_pkts[1] will also be updated  by memc_enable
 static struct dsi_cmd_desc iris_meta_pkts[] = {
 	{{DTYPE_GEN_LWRITE, 0, 0, 0, 0, sizeof(imeta)}, imeta},
 	{{ DTYPE_GEN_WRITE2, 0, 0, 0, 0, sizeof(fbo_update) }, fbo_update },
@@ -2400,41 +2400,42 @@ int iris_set_meta(struct msm_fb_data_type *mfd, void __user *argp)
 	struct iris_config *iris_cfg = &g_mfd->iris_conf;
 	struct iris_meta user_meta;
 
-    ret = copy_from_user((void *)&user_meta, argp, sizeof(struct iris_meta));
-    if (ret == 0) {
-        mutex_lock(&iris_cfg->meta_mutex);
-        iris_cfg->meta_set.op |= user_meta.op;
-        if (user_meta.op & MDP_IRIS_OP_NEW_FRAME)
-            iris_cfg->meta_set.new_frame = user_meta.new_frame;
-        if (user_meta.op & MDP_IRIS_OP_RESTART)
-            iris_cfg->meta_set.restart = user_meta.restart;
-        if (user_meta.op & MDP_IRIS_OP_VTS)
-            iris_cfg->meta_set.video_ts = user_meta.video_ts;
-        if (user_meta.op & MDP_IRIS_OP_STS)
-           iris_cfg->meta_set.sys_ts = user_meta.sys_ts;
-        if (user_meta.op & MDP_IRIS_OP_VID)
-           iris_cfg->meta_set.vid = user_meta.vid;
-        if (user_meta.op & MDP_IRIS_OP_TE)
-          iris_cfg->meta_set.te_period = user_meta.te_period;
-        if (user_meta.op & MDP_IRIS_OP_CP) {
-            iris_cfg->meta_set.content_period = user_meta.content_period;
-            iris_cfg->meta_set.content_period_frac = user_meta.content_period_frac;
-        }
-        if (user_meta.op & MDP_IRIS_OP_MOTION)
-           iris_cfg->meta_set.motion = user_meta.motion;
-        if (user_meta.op & MDP_IRIS_OP_JITTER)
-           iris_cfg->meta_set.jitter = user_meta.jitter;
-        if (user_meta.op & MDP_IRIS_OP_NRV)
-           iris_cfg->meta_set.nrv = user_meta.nrv;
-        if (user_meta.op & MDP_IRIS_OP_FLG)
-            iris_cfg->meta_set.flags = user_meta.flags;
-        if (user_meta.op & MDP_IRIS_OP_RPT)
-            iris_cfg->meta_set.repeat = user_meta.repeat;
-        mutex_unlock(&iris_cfg->meta_mutex);
-    }
+	ret = copy_from_user((void *)&user_meta, argp, sizeof(struct iris_meta));
+	if (ret != 0)
+		return -EINVAL;
+
+	mutex_lock(&iris_cfg->meta_mutex);
+	iris_cfg->meta_set.op |= user_meta.op;
+	if (user_meta.op & MDP_IRIS_OP_NEW_FRAME)
+		iris_cfg->meta_set.new_frame = user_meta.new_frame;
+	if (user_meta.op & MDP_IRIS_OP_RESTART)
+		iris_cfg->meta_set.restart = user_meta.restart;
+	if (user_meta.op & MDP_IRIS_OP_VTS)
+		iris_cfg->meta_set.video_ts = user_meta.video_ts;
+	if (user_meta.op & MDP_IRIS_OP_STS)
+		iris_cfg->meta_set.sys_ts = user_meta.sys_ts;
+	if (user_meta.op & MDP_IRIS_OP_VID)
+		iris_cfg->meta_set.vid = user_meta.vid;
+	if (user_meta.op & MDP_IRIS_OP_TE)
+		iris_cfg->meta_set.te_period = user_meta.te_period;
+	if (user_meta.op & MDP_IRIS_OP_CP) {
+		iris_cfg->meta_set.content_period = user_meta.content_period;
+		iris_cfg->meta_set.content_period_frac = user_meta.content_period_frac;
+	}
+	if (user_meta.op & MDP_IRIS_OP_MOTION)
+		iris_cfg->meta_set.motion = user_meta.motion;
+	if (user_meta.op & MDP_IRIS_OP_JITTER)
+		iris_cfg->meta_set.jitter = user_meta.jitter;
+	if (user_meta.op & MDP_IRIS_OP_NRV)
+		iris_cfg->meta_set.nrv = user_meta.nrv;
+	if (user_meta.op & MDP_IRIS_OP_FLG)
+		iris_cfg->meta_set.flags = user_meta.flags;
+	if (user_meta.op & MDP_IRIS_OP_RPT)
+		iris_cfg->meta_set.repeat = user_meta.repeat;
+	mutex_unlock(&iris_cfg->meta_mutex);
 
 	pr_debug("op [%08x] vTimestamp [%u] sTimestamp [%u] flag [%u]\n",
-		iris_cfg->meta.op, iris_cfg->meta.video_ts, iris_cfg->meta.sys_ts, iris_cfg->meta.flags);
+		iris_cfg->meta_set.op, iris_cfg->meta_set.video_ts, iris_cfg->meta_set.sys_ts, iris_cfg->meta_set.flags);
 
 	if (iris_cfg->meta_set.op & MDP_IRIS_OP_RPT)
 		pr_debug("repeat: %d\n", iris_cfg->meta_set.repeat);
@@ -4250,7 +4251,7 @@ int iris_configure_ex_demo_win_info(struct msm_fb_data_type *mfd, u32 *values)
 			iris_reg_add(FI_SHADOW_UPDATE, 1);
 		}
 	}
-	if (pdemo_win_info->SharpnessEn && pq_setting_current.sharpness) {
+	if (pdemo_win_info->SharpnessEn) {
 		if (iris_cfg->sf_notify_mode != MDP_IRIS_MODE_RFB) {
 			//mutex_lock(&iris_cfg->cmd_mutex);
 			iris_reg_add(PEAKING_STARTWIN, winstart);
@@ -4429,9 +4430,6 @@ static int iris_set_repeat(struct iris_config *iris_cfg)
 			iris_reg_add(FRCC_CTRL_REG16_ADDR, val_frcc_reg16);
 			iris_reg_add(FRCC_CMD_MOD_TH, val_frcc_cmd_th);
 			iris_reg_add(FRCC_REG_SHOW, 0x2);
-		}
-		//if (!debug_hlmd_enabled)
-		{
 			iris_reg_add(IRIS_PWIL_ADDR + 0x12FC, reg_in);
 			iris_reg_add(IRIS_PWIL_ADDR + 0x0638, reg_out);
 			iris_reg_add(IRIS_PWIL_ADDR + 0x10000, (1 << 8) | (1 << 6));
@@ -4455,20 +4453,20 @@ void iris_cmd_cadence_check(struct mdss_mdp_ctl *ctl)
 	static int skip;
 
 	struct mdss_overlay_private *mdp5_data = mfd_to_mdp5_data(ctl->mfd);
-	struct mdss_mdp_pipe *pipe;
 	struct mdss_mdp_mixer *mixer;
 	u32 frame_addr, frame_count, frames;
 	int i;
+	char *addr;
 
 	if (!mdp5_data)
 		return;
-	list_for_each_entry(pipe, &mdp5_data->pipes_used, list) {
-		if (pipe->type == MDSS_MDP_PIPE_TYPE_VIG)
-			goto check_cadence;
-	}
-	return;
 
-check_cadence:
+	/* another CPU could change  mdp5_data->yuv_frame_addr_reg while the ISR is running
+	use volatile to protect */
+	addr = ACCESS_ONCE(mdp5_data->yuv_frame_addr_reg);
+	if (!addr)
+		return;
+
 	// only check the left ctl
 	mixer = mdss_mdp_mixer_get(ctl, MDSS_MDP_MIXER_MUX_LEFT);
 	if (!mixer)
@@ -4476,7 +4474,7 @@ check_cadence:
 
 	frame_count = (mdss_mdp_pingpong_read(mixer->pingpong_base, MDSS_MDP_REG_PP_INT_COUNT_VAL) >> 16) & 0xffff;
 	frames = frame_count - prev_frame_count;
-	frame_addr = readl_relaxed(pipe->base + MDSS_MDP_REG_SSPP_SRC0_ADDR);
+	frame_addr = readl_relaxed(addr);
 	//pr_debug("=== frame %08x count %u diff %u\n",
 	//	 frame_addr, frame_count, frames);
 	if (frame_addr == prev_frame_addr)
@@ -5170,6 +5168,15 @@ void iris_copy_meta(struct msm_fb_data_type *mfd)
 	mutex_unlock(&iris_cfg->meta_mutex);
 }
 
+/*
+ * There are 3 commands in iris_meta_pkts
+ * first is meta, and second is for capture enable/disable. Third is FBO.
+ * When capture changed:
+ * If meta is null(iris_reg_cnt), send the capture command directly.
+ * If meta is not null, copy capture command to iris_meta_pkts[1], and send together.
+ *
+ */
+
 void iris_send_meta_cmd(struct mdss_mdp_ctl *ctl)
 {
 	struct mdss_dsi_ctrl_pdata *ctrl = g_dsi_ctrl;
@@ -5218,8 +5225,13 @@ void iris_send_meta_cmd(struct mdss_mdp_ctl *ctl)
 #else
 			cmdreq.cmds = cursor_mode_enter;
 #endif
-		mdss_dsi_cmdlist_put(g_dsi_ctrl, &cmdreq);
-		iris_cfg->cap_change = false;
+
+		if(iris_reg_cnt == 0) {
+			mdss_dsi_cmdlist_put(g_dsi_ctrl, &cmdreq);
+			iris_cfg->cap_change = false;
+		} else
+			memcpy(&iris_meta_pkts[1], cmdreq.cmds, sizeof(struct dsi_cmd_desc));
+
 		pr_debug("cap_change: %d\n", iris_cfg->cap_enable);
 	}
 
@@ -5235,7 +5247,16 @@ void iris_send_meta_cmd(struct mdss_mdp_ctl *ctl)
 	iris_regs_clear();
 	mutex_unlock(&g_mfd->iris_conf.cmd_mutex);
 	cmdreq.cmds = iris_meta_pkts;
-	iris_meta_pkts[0].dchdr.last = 1;
+
+	if (iris_cfg->cap_change == false)
+		iris_meta_pkts[0].dchdr.last = 1;
+	else {
+		iris_meta_pkts[1].dchdr.last = 1;
+		iris_meta_pkts[0].dchdr.last = 0;
+		cmdreq.cmds_cnt = 2;
+	}
+
+	iris_cfg->cap_change = false;
 
 	for (cmd = 0; cmd < cmdreq.cmds_cnt; cmd++) {
 		pr_debug("dchdr: %02x %02x %02x %02x %02x %02x\n",

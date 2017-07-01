@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2015, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2016, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -45,7 +45,7 @@ extern int entry_mode;
 #define DEFAULT_MDP_TRANSFER_TIME 14000
 #define WLED_MAX_LEVEL_ENABLE 4095
 #define WLED_MIN_LEVEL_DISABLE 0
-static bool bl_wled_enable = false;
+static bool bl_wled_enable = true;
 extern int cabc;
 void iris_tcon_cabc_on_off(u8 addr, u8 value);
 
@@ -236,6 +236,55 @@ static void mdss_dsi_panel_bklt_dcs(struct mdss_dsi_ctrl_pdata *ctrl, int level)
 	mdss_dsi_cmdlist_put(ctrl, &cmdreq);
 }
 
+static int mdss_dsi_request_gpios(struct mdss_dsi_ctrl_pdata *ctrl_pdata)
+{
+	int rc = 0;
+/*
+	if (gpio_is_valid(ctrl_pdata->disp_en_gpio)) {
+		rc = gpio_request(ctrl_pdata->disp_en_gpio,
+						"disp_enable");
+		if (rc) {
+			pr_err("request disp_en gpio failed, rc=%d\n",
+				       rc);
+			goto disp_en_gpio_err;
+		}
+	}
+	rc = gpio_request(ctrl_pdata->rst_gpio, "disp_rst_n");
+	if (rc) {
+		pr_err("request reset gpio failed, rc=%d\n",
+			rc);
+		goto rst_gpio_err;
+	}
+*/
+	if (gpio_is_valid(ctrl_pdata->bklt_en_gpio)) {
+		rc = gpio_request(ctrl_pdata->bklt_en_gpio,
+						"bklt_enable");
+		if (rc) {
+			pr_err("request bklt gpio failed, rc=%d\n",
+				       rc);
+			goto bklt_en_gpio_err;
+		}
+	}
+
+	if (gpio_is_valid(ctrl_pdata->lcd_mode_sel_gpio)) {
+		rc = gpio_request(ctrl_pdata->lcd_mode_sel_gpio, "mode_sel");
+		if (rc) {
+			pr_err("request dsc/dual mode gpio failed,rc=%d\n",
+								rc);
+			goto lcd_mode_sel_gpio_err;
+		}
+	}
+
+	return rc;
+
+lcd_mode_sel_gpio_err:
+	if (gpio_is_valid(ctrl_pdata->bklt_en_gpio))
+		gpio_free(ctrl_pdata->bklt_en_gpio);
+bklt_en_gpio_err:
+	gpio_free(ctrl_pdata->rst_gpio);
+	return rc;
+}
+
 int mdss_dsi_panel_reset(struct mdss_panel_data *pdata, int enable)
 {
 	struct mdss_dsi_ctrl_pdata *ctrl_pdata = NULL;
@@ -273,6 +322,11 @@ int mdss_dsi_panel_reset(struct mdss_panel_data *pdata, int enable)
 	pr_debug("%s: enable = %d\n", __func__, enable);
 
 	if (enable) {
+		rc = mdss_dsi_request_gpios(ctrl_pdata);
+		if (rc) {
+			pr_err("gpio request failed\n");
+			return rc;
+		}
 		if (!pinfo->cont_splash_enabled) {
 			//for jdi-lpm068a253a-1080p +
 			//for jdi-lpm068a253a-1080p -
@@ -329,6 +383,7 @@ int mdss_dsi_panel_reset(struct mdss_panel_data *pdata, int enable)
 	} else {
 		if (gpio_is_valid(ctrl_pdata->bklt_en_gpio)) {
 			gpio_set_value((ctrl_pdata->bklt_en_gpio), 0);
+			gpio_free(ctrl_pdata->bklt_en_gpio);
 		}
 		//for jdi-lpm068a253a-1080p +
 		//if (gpio_is_valid(ctrl_pdata->disp_en_gpio)) {
@@ -345,6 +400,13 @@ int mdss_dsi_panel_reset(struct mdss_panel_data *pdata, int enable)
 	}
 	return 0;
 gpio_err:
+	if (gpio_is_valid(ctrl_pdata->lcd_mode_sel_gpio))
+		gpio_free(ctrl_pdata->lcd_mode_sel_gpio);
+	if (gpio_is_valid(ctrl_pdata->bklt_en_gpio))
+		gpio_free(ctrl_pdata->bklt_en_gpio);
+	gpio_free(ctrl_pdata->rst_gpio);
+	if (gpio_is_valid(ctrl_pdata->disp_en_gpio))
+		gpio_free(ctrl_pdata->disp_en_gpio);
 	return rc;
 }
 
@@ -716,6 +778,7 @@ static int mdss_dsi_panel_on(struct mdss_panel_data *pdata)
 	ctrl = container_of(pdata, struct mdss_dsi_ctrl_pdata,
 				panel_data);
 
+	pr_debug("%s: ctrl=%pK ndx=%d\n", __func__, ctrl, ctrl->ndx);
 #if defined(TARGET_PROJECT_ZU680KL_DISPLAY)
 	// for zu680 project, dsi1 is used for DP display
 	if(ctrl->ndx == 1){
@@ -814,7 +877,7 @@ static int mdss_dsi_panel_on(struct mdss_panel_data *pdata)
 			(pinfo->mipi.boot_mode != pinfo->mipi.mode))
 		on_cmds = &ctrl->post_dms_on_cmds;
 
-	pr_debug("%s: ctrl=%p cmd_cnt=%d\n", __func__, ctrl, on_cmds->cmd_cnt);
+	pr_debug("%s: ctrl=%pK cmd_cnt=%d\n", __func__, ctrl, on_cmds->cmd_cnt);
 
 	if (on_cmds->cmd_cnt)
 		mdss_dsi_panel_cmds_send(ctrl, on_cmds);
@@ -847,7 +910,7 @@ static int mdss_dsi_post_panel_on(struct mdss_panel_data *pdata)
 	ctrl = container_of(pdata, struct mdss_dsi_ctrl_pdata,
 				panel_data);
 
-	pr_debug("%s: ctrl=%p ndx=%d\n", __func__, ctrl, ctrl->ndx);
+	pr_debug("%s: ctrl=%pK ndx=%d\n", __func__, ctrl, ctrl->ndx);
 
 	pinfo = &pdata->panel_info;
 	if (pinfo->dcs_cmd_by_left) {
@@ -857,7 +920,7 @@ static int mdss_dsi_post_panel_on(struct mdss_panel_data *pdata)
 
 	on_cmds = &ctrl->post_panel_on_cmds;
 
-	pr_debug("%s: ctrl=%p cmd_cnt=%d\n", __func__, ctrl, on_cmds->cmd_cnt);
+	pr_debug("%s: ctrl=%pK cmd_cnt=%d\n", __func__, ctrl, on_cmds->cmd_cnt);
 
 	if (on_cmds->cmd_cnt) {
 		msleep(50);	/* wait for 3 vsync passed */
@@ -892,6 +955,8 @@ static int mdss_dsi_panel_off(struct mdss_panel_data *pdata)
 	pinfo = &pdata->panel_info;
 	ctrl = container_of(pdata, struct mdss_dsi_ctrl_pdata,
 				panel_data);
+
+	pr_debug("%s: ctrl=%pK ndx=%d\n", __func__, ctrl, ctrl->ndx);
 
 #ifdef CONFIG_PIXELWORKS_IRIS_SUPPORT
 	pr_info("%s: ctrl=%p ndx=%d\n", __func__, ctrl, ctrl->ndx);
@@ -977,7 +1042,7 @@ static int mdss_dsi_panel_low_power_config(struct mdss_panel_data *pdata,
 	ctrl = container_of(pdata, struct mdss_dsi_ctrl_pdata,
 				panel_data);
 
-	pr_debug("%s: ctrl=%p ndx=%d enable=%d\n", __func__, ctrl, ctrl->ndx,
+	pr_debug("%s: ctrl=%pK ndx=%d enable=%d\n", __func__, ctrl, ctrl->ndx,
 		enable);
 
 	/* Any panel specific low power commands/config */

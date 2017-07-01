@@ -592,15 +592,6 @@ static ssize_t mtp_read(struct file *fp, char __user *buf,
 
 	DBG(cdev, "mtp_read(%zu)\n", count);
 
-	if(dev->ep_out != NULL){
-		len = ALIGN(count, dev->ep_out->maxpacket);
-	}else{
-		len = count;
-	}
-
-	if (len > mtp_rx_req_len)
-		return -EINVAL;
-
 	/* we will block until we're online */
 	DBG(cdev, "mtp_read: waiting for online state\n");
 	ret = wait_event_interruptible(dev->read_wq,

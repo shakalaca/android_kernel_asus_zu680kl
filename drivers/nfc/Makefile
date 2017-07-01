@@ -1,10 +1,13 @@
 #
-# Makefile for NXP-NCI NFC driver
+# Makefile for nfc devices
 #
 
-nxp-pn5xx-objs = pn5xx_i2c.o
-
-obj-$(CONFIG_NFC_NXP_PN5XX) += pn5xx_i2c.o
+obj-$(CONFIG_NFC_PN544)		+= pn544/
+obj-$(CONFIG_NFC_MICROREAD)	+= microread/
+obj-$(CONFIG_NFC_PN533)		+= pn533.o
+obj-$(CONFIG_NFC_WILINK)	+= nfcwilink.o
+obj-$(CONFIG_NFC_MEI_PHY)	+= mei_phy.o
+obj-$(CONFIG_NFC_QNCI)		+= nfc-nci.o
+obj-$(CONFIG_NFC_NQ)		+= nq-nci.o
 
 ccflags-$(CONFIG_NFC_DEBUG) := -DDEBUG
-ccflags := -DDEBUG

@@ -31,13 +31,14 @@ config APM_POWER
 
 config SENSORS_US5587
 tristate "Micro Power Intellect US5587"
-	depends on I2C
-	help
-		If you say yes here you get support for Micro Power Intellect US5587
-		ADC device.
+        depends on I2C
+	default n
+        help
+                If you say yes here you get support for Micro Power Intellect US5587
+                ADC device.
 
-		This driver can also be built as a module.  If so, the module
-		will be called us5587.
+                This driver can also be built as a module.  If so, the module
+                will be called us5587.
 
 config GENERIC_ADC_BATTERY
 	tristate "Generic battery support using IIO"
@@ -486,11 +487,11 @@ config QPNP_FG
 	  supply property and also sends uevents when the capacity is updated.
 
 config BOOST_TPS61280
-	tristate "BOOST IC TPS61280 driver"
-	depends on I2C
-	default n
-	help
-	  Say Y here to enable the boost ic driver.
+        tristate "BOOST IC TPS61280 driver"
+        depends on I2C
+        default n
+        help
+          Say Y here to enable the boost ic driver.
 
 config PM8921_BMS
 	tristate "PM8921 Battery Monitoring System driver"

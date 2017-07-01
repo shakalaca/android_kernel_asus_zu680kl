@@ -657,7 +657,7 @@ static struct i2c_driver cap12LF1552_driver = {
         .owner = THIS_MODULE,
         .of_match_table = cap12LF1552_dt_ids,
 #ifdef CONFIG_PM
-        .pm = &cap1106_pm_ops,
+        .pm = &cap12LF1552_pm_ops,
 #endif
     },
     .probe     = cap12LF1552_probe,

@@ -52,8 +52,10 @@ static struct msm_actuator msm_bivcm_actuator_table;
 static int vcm_threshold_um = 0;
 #define VCM_THRESHOLD_RW_PROC_FILE "driver/vcm_threshold"
 #define VCM_SERVO_OFF_PROC_FILE      "driver/vcm_servo_off"
-#define SERVO_OFF_COUNT 3
+#define SERVO_OFF_COUNT 2
 #define SERVO_ON SERVO_OFF_COUNT+1
+#define VCM_NOISE_WA 1
+#if VCM_NOISE_WA
 static int vcm_servo_status = SERVO_ON;	/* 4: servo on, 0~3:server off */
 static uint16_t vcm_data_g = 0xA000;
 static struct task_struct *brook_tsk;
@@ -64,10 +66,8 @@ static int kbrook(void *arg)
 	unsigned int timeout;
 	uint8_t reg_vcm_pos_read[2] = {0x72, 0x3C};
 	uint8_t reg_servo_on[3] = {0x72, 0x87, 0x9D};
-#if 1
 	uint8_t reg_servo_off[3] = {0x72, 0x87, 0x1D};
 	uint8_t reg_vcm_current_0[4] = {0x72, 0x02, 0x00, 0x00};
-#endif
 	uint8_t reg_vcm_pos_set_0[4] = {0x72, 0xA0, 0x00, 0x00};
 
 	/* this thread is checking if vcm posiztion under Z1-20um. if yes, set vcm servo off to reduce vcm noise */
@@ -86,20 +86,18 @@ static int kbrook(void *arg)
 			vcm_servo_status = vcm_servo_status + 1;
 		} else if (vcm_data < actuator_data_Z1_minus_Xum && vcm_servo_status < SERVO_OFF_COUNT) {
 			vcm_servo_status = 0;
-		} else if (vcm_data >= actuator_data_Z1 && vcm_servo_status == SERVO_OFF_COUNT) {
-			pr_err("[vcm] servo on, z1:%u z2:%u cur_position %u then set to %u\n",actuator_data_Z1, actuator_data_Z2, vcm_data, vcm_data_g>>4);
+		} else if (vcm_data >= actuator_data_Z1_minus_Xum && vcm_servo_status == SERVO_OFF_COUNT) {
+			pr_err("[vcm] servo on, z1:%u z2:%u Z1-Xum:%u cur_position %u then set to %u\n",actuator_data_Z1, actuator_data_Z2, actuator_data_Z1_minus_Xum, vcm_data, vcm_data_g>>4);
 			reg_vcm_pos_set_0[2] = (vcm_data_g & 0xFF00) >> 8;
 			reg_vcm_pos_set_0[3] = vcm_data_g & 0x00FF;
 			i2c_write_thu_imx318(reg_servo_on, 3);
 			i2c_write_thu_imx318(reg_vcm_pos_set_0, 4);
 			vcm_servo_status = SERVO_ON;
-#if 1
 		} else if (vcm_data < actuator_data_Z1_minus_Xum && vcm_servo_status == SERVO_ON){
 			pr_err("[vcm] servo off, z1:%u z2:%u Z1-Xum:%u cur_position %u \n", actuator_data_Z1, actuator_data_Z2, actuator_data_Z1_minus_Xum, vcm_data);
 			vcm_servo_status = 0;
 			i2c_write_thu_imx318(reg_servo_off, 3);
 			i2c_write_thu_imx318(reg_vcm_current_0, 4);
-#endif
 		}
 
 		mutex_unlock(&msm_actuator_mutex);
@@ -111,9 +109,11 @@ static int kbrook(void *arg)
 	brook_tsk = NULL;
 	return 0;
 }
+#endif
 
 static int ATD_vcm_servo_off_proc_read(struct seq_file *buf, void *v)
 {
+#if VCM_NOISE_WA
 	uint8_t reg_servo_off[3] = {0x72, 0x87, 0x1D};
 	uint8_t reg_vcm_current_0[4] = {0x72, 0x02, 0x00, 0x00};
 
@@ -125,8 +125,8 @@ static int ATD_vcm_servo_off_proc_read(struct seq_file *buf, void *v)
 		i2c_write_thu_imx318(reg_vcm_current_0, 4);
 	}
 	mutex_unlock(&msm_actuator_mutex);
+#endif
 	seq_printf(buf, "[vcm] servo off\n");
-
 	return 0;
 }
 
@@ -233,11 +233,6 @@ static void msm_actuator_parse_i2c_params(struct msm_actuator_ctrl_t *a_ctrl,
 	struct msm_camera_i2c_reg_array *i2c_tbl = a_ctrl->i2c_reg_tbl;
 	CDBG("Enter\n");
 	for (i = 0; i < size; i++) {
-		/* check that the index into i2c_tbl cannot grow larger that
-		the allocated size of i2c_tbl */
-		if ((a_ctrl->total_steps + 1) < (a_ctrl->i2c_tbl_index)) {
-			break;
-		}
 		if (write_arr[i].reg_write_type == MSM_ACTUATOR_WRITE_DAC) {
 			value = (next_lens_position <<
 				write_arr[i].data_shift) |
@@ -251,6 +246,11 @@ static void msm_actuator_parse_i2c_params(struct msm_actuator_ctrl_t *a_ctrl,
 					i2c_byte2 = value & 0xFF;
 					CDBG("byte1:0x%x, byte2:0x%x\n",
 						i2c_byte1, i2c_byte2);
+					if (a_ctrl->i2c_tbl_index >
+						a_ctrl->total_steps) {
+						pr_err("failed:i2c table index out of bound\n");
+						break;
+					}
 					i2c_tbl[a_ctrl->i2c_tbl_index].
 						reg_addr = i2c_byte1;
 					i2c_tbl[a_ctrl->i2c_tbl_index].
@@ -270,6 +270,10 @@ static void msm_actuator_parse_i2c_params(struct msm_actuator_ctrl_t *a_ctrl,
 			i2c_byte1 = write_arr[i].reg_addr;
 			i2c_byte2 = (hw_dword & write_arr[i].hw_mask) >>
 				write_arr[i].hw_shift;
+		}
+		if (a_ctrl->i2c_tbl_index > a_ctrl->total_steps) {
+			pr_err("failed: i2c table index out of bound\n");
+			break;
 		}
 		CDBG("i2c_byte1:0x%x, i2c_byte2:0x%x\n", i2c_byte1, i2c_byte2);
 		i2c_tbl[a_ctrl->i2c_tbl_index].reg_addr = i2c_byte1;
@@ -329,9 +333,11 @@ static int msm_actuator_bivcm_handle_i2c_ops(
 
 			reg_setting.reg_setting = &i2c_tbl;
 			reg_setting.data_type = a_ctrl->i2c_data_type;
+#if VCM_NOISE_WA
 			if (vcm_servo_status == SERVO_ON){
 				vcm_data_g = value;
 				pr_debug("[vcm] next_lens_position=%d, vcm_data_g=%u set pos to %u\n", next_lens_position, vcm_data_g, vcm_data_g>>4);
+#endif
 				rc = a_ctrl->i2c_client.
 					i2c_func_tbl->i2c_write_table_w_microdelay(
 					&a_ctrl->i2c_client, &reg_setting);
@@ -339,7 +345,9 @@ static int msm_actuator_bivcm_handle_i2c_ops(
 					pr_err("i2c write error:%d\n", rc);
 					return rc;
 				}
+#if VCM_NOISE_WA
 			}
+#endif
 			break;
 		case MSM_ACTUATOR_WRITE:
 			i2c_tbl.reg_data = write_arr[i].reg_data;
@@ -735,7 +743,7 @@ static int32_t msm_actuator_move_focus(
 	if ((a_ctrl->region_size <= 0) ||
 		(a_ctrl->region_size > MAX_ACTUATOR_REGION) ||
 		(!move_params->ringing_params)) {
-		pr_err("Invalid-region size = %d, ringing_params = %p\n",
+		pr_err("Invalid-region size = %d, ringing_params = %pK\n",
 		a_ctrl->region_size, move_params->ringing_params);
 		return -EFAULT;
 	}
@@ -850,7 +858,7 @@ static int32_t msm_actuator_bivcm_move_focus(
 	if ((a_ctrl->region_size <= 0) ||
 		(a_ctrl->region_size > MAX_ACTUATOR_REGION) ||
 		(!move_params->ringing_params)) {
-		pr_err("Invalid-region size = %d, ringing_params = %p\n",
+		pr_err("Invalid-region size = %d, ringing_params = %pK\n",
 		a_ctrl->region_size, move_params->ringing_params);
 		return -EFAULT;
 	}
@@ -1005,6 +1013,13 @@ static int32_t msm_actuator_bivcm_init_step_table(
 	uint32_t qvalue = 0;
 	CDBG("Enter\n");
 
+	/* validate the actuator state */
+	if (a_ctrl->actuator_state != ACT_OPS_ACTIVE) {
+		pr_err("%s:%d invalid actuator_state %d\n"
+			, __func__, __LINE__, a_ctrl->actuator_state);
+		return -EINVAL;
+	}
+
 	for (; data_size > 0; data_size--) {
 		max_code_size *= 2;
 		mask |= (1 << i++);
@@ -1099,11 +1114,11 @@ static int32_t msm_actuator_init_step_table(struct msm_actuator_ctrl_t *a_ctrl,
 			, __func__, __LINE__, a_ctrl->actuator_state);
 		return -EINVAL;
 	}
-	for (; data_size > 0; data_size--)
+
+       for (; data_size > 0; data_size--)
 		max_code_size *= 2;
 
 	a_ctrl->max_code_size = max_code_size;
-
 	/* free the step_position_table to allocate a new one */
 	kfree(a_ctrl->step_position_table);
 	a_ctrl->step_position_table = NULL;
@@ -1221,10 +1236,13 @@ static int32_t msm_actuator_power_down(struct msm_actuator_ctrl_t *a_ctrl)
 {
 	int32_t rc = 0;
 	CDBG("Enter\n");
+
+#if VCM_NOISE_WA
 	if (brook_tsk){
 		kthread_stop(brook_tsk);
 		brook_tsk = NULL;
 	}
+#endif
 
 	if (a_ctrl->actuator_state != ACT_DISABLE_STATE) {
 
@@ -1290,6 +1308,7 @@ static int32_t msm_actuator_set_position(
 	}
 
 	a_ctrl->i2c_tbl_index = 0;
+	hw_params = set_pos->hw_params;
 	for (index = 0; index < set_pos->number_of_steps; index++) {
 		next_lens_position = set_pos->pos[index];
 		delay = set_pos->delay[index];
@@ -1524,7 +1543,7 @@ static int msm_actuator_init(struct msm_actuator_ctrl_t *a_ctrl)
 		vcm_z1z2_once = 1;
 		actuator_data_Z1_minus_Xum = actuator_data_Z1 - ((actuator_data_Z2 - actuator_data_Z1)*30/300);
 	}
-#if 1
+#if VCM_NOISE_WA
 	/* create thread for monitor vcm position if under Z1-20um */
 	if (brook_tsk == NULL) {
 		brook_tsk = kthread_create(kbrook, NULL, "brook");
@@ -1709,7 +1728,7 @@ static long msm_actuator_subdev_ioctl(struct v4l2_subdev *sd,
 	struct msm_actuator_ctrl_t *a_ctrl = v4l2_get_subdevdata(sd);
 	void __user *argp = (void __user *)arg;
 	CDBG("Enter\n");
-	CDBG("%s:%d a_ctrl %p argp %p\n", __func__, __LINE__, a_ctrl, argp);
+	CDBG("%s:%d a_ctrl %pK argp %pK\n", __func__, __LINE__, a_ctrl, argp);
 	switch (cmd) {
 	case VIDIOC_MSM_SENSOR_GET_SUBDEV_ID:
 		return msm_actuator_get_subdev_id(a_ctrl, argp);
@@ -1722,11 +1741,13 @@ static long msm_actuator_subdev_ioctl(struct v4l2_subdev *sd,
 			pr_err("a_ctrl->i2c_client.i2c_func_tbl NULL\n");
 			return -EINVAL;
 		} else {
+			mutex_lock(a_ctrl->actuator_mutex);
 			rc = msm_actuator_power_down(a_ctrl);
 			if (rc < 0) {
 				pr_err("%s:%d Actuator Power down failed\n",
 					__func__, __LINE__);
 			}
+			mutex_unlock(a_ctrl->actuator_mutex);
 			return msm_actuator_close(sd, NULL);
 		}
 	default:
@@ -1949,7 +1970,7 @@ static int32_t msm_actuator_i2c_probe(struct i2c_client *client,
 		goto probe_failure;
 	}
 
-	CDBG("client = 0x%p\n",  client);
+	CDBG("client = 0x%pK\n",  client);
 
 	rc = of_property_read_u32(client->dev.of_node, "cell-index",
 		&act_ctrl_t->subdev_id);

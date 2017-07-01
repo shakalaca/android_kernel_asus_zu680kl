@@ -17,6 +17,7 @@
 #include "msm_led_flash.h"
 #include "msm_camera_io_util.h"
 #include "../msm_sensor.h"
+#include "msm_led_flash.h"
 #include "../cci/msm_cci.h"
 #include <linux/debugfs.h>
 #include <linux/fs.h>
@@ -181,8 +182,9 @@ int msm_flash_led_init(struct msm_led_flash_ctrl_t *fctrl)
 	flashdata = fctrl->flashdata;
 	power_info = &flashdata->power_info;
 	fctrl->led_state = MSM_CAMERA_LED_RELEASE;
-	if (power_info->gpio_conf->cam_gpiomux_conf_tbl != NULL)
+	if (power_info->gpio_conf->cam_gpiomux_conf_tbl != NULL) {
 		pr_err("%s:%d mux install\n", __func__, __LINE__);
+	}
 
 	/* CCI Init */
 	if (fctrl->flash_device_type == MSM_CAMERA_PLATFORM_DEVICE) {
@@ -274,10 +276,10 @@ int msm_flash_led_release(struct msm_led_flash_ctrl_t *fctrl)
 			GPIO_OUT_LOW);
 	if (power_info->gpio_conf->gpio_num_info->
 			valid[SENSOR_GPIO_FL_RESET] == 1)
-			gpio_set_value_cansleep(
-				power_info->gpio_conf->gpio_num_info->
-				gpio_num[SENSOR_GPIO_FL_RESET],
-				GPIO_OUT_LOW);
+		gpio_set_value_cansleep(
+			power_info->gpio_conf->gpio_num_info->
+			gpio_num[SENSOR_GPIO_FL_RESET],
+			GPIO_OUT_LOW);
 
 	if (fctrl->pinctrl_info.use_pinctrl == true) {
 		ret = pinctrl_select_state(fctrl->pinctrl_info.pinctrl,
@@ -1782,7 +1784,6 @@ int msm_flash_i2c_probe(struct i2c_client *client,
 	if (!dentry)
 		pr_err("Failed to create the debugfs ledflash file");
 #endif
-
 	/* Assign Global flash control sturcture for local usage */
 	g_fctrl = (void *) fctrl;
 	rc = msm_i2c_torch_create_classdev(&(client->dev), NULL);

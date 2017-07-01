@@ -65,14 +65,12 @@ dtb-$(CONFIG_ARCH_MSM8909) += msm8909-sim.dtb \
 	msm8208-1gb-rcm.dtb \
 	msm8208-qhd-cdp.dtb \
 	msm8208-qhd-rcm.dtb
-dtb-$(CONFIG_ARCH_MSM8916) += zu680kl-sr1_msm8956-mtp.dtb \
-	zu680kl-sr1_msm8976-mtp.dtb \
-	zu680kl-er1_msm8976-mtp.dtb \
-	zu680kl-er2_msm8976-mtp.dtb \
-	zu680kl-er3_msm8976-mtp.dtb \
-	zu680kl-pr1_msm8976-mtp.dtb \
-	zu680kl-mp_msm8976-mtp.dtb \
-	zu680kl-mp2_msm8976-mtp.dtb
+dtb-$(CONFIG_ARCH_MSM8916) += zu680kl-er1_msm8976-mtp.dtb \
+        zu680kl-er2_msm8976-mtp.dtb \
+        zu680kl-er3_msm8976-mtp.dtb \
+        zu680kl-pr1_msm8976-mtp.dtb \
+        zu680kl-mp_msm8976-mtp.dtb \
+        zu680kl-mp2_msm8976-mtp.dtb
 dtb-$(CONFIG_ARCH_MSM8226) += msm8226-sim.dtb \
 	msm8226-fluid.dtb \
 	msm8226-v1-cdp.dtb \

@@ -75,22 +75,22 @@ static ssize_t power_supply_show_property(struct device *dev,
 	const ptrdiff_t off = attr - power_supply_attrs;
 	union power_supply_propval value;
 	char battery_soh[100];
-	union power_supply_propval FCC, RM, TEMP, VOLT, BATT_CUR, CC;
-	memset(battery_soh, 0, sizeof(battery_soh));
+        union power_supply_propval FCC, RM, TEMP, VOLT, BATT_CUR, CC;
+        memset(battery_soh, 0, sizeof(battery_soh));
 
-	if (off == POWER_SUPPLY_PROP_CSC_BATTERY_SOH) {
-		psy->get_property(psy, POWER_SUPPLY_PROP_CHARGE_FULL, &FCC);
-		psy->get_property(psy, POWER_SUPPLY_PROP_CHARGE_NOW_RAW, &RM);
-		psy->get_property(psy, POWER_SUPPLY_PROP_TEMP, &TEMP);
-		psy->get_property(psy, POWER_SUPPLY_PROP_VOLTAGE_NOW, &VOLT);
-		psy->get_property(psy, POWER_SUPPLY_PROP_CURRENT_NOW, &BATT_CUR);
-		psy->get_property(psy, POWER_SUPPLY_PROP_CYCLE_COUNT, &CC);
-		snprintf(battery_soh, sizeof(battery_soh), "FCC=%d(mAh), DC=4600(mAH), RM=%d(mAh), TMP=%d(C), VOLT=%d(mV), CUR=%d(mA), CC=%d",
-				FCC.intval/1000, RM.intval/1000, TEMP.intval/10, VOLT.intval/1000, BATT_CUR.intval/1000, CC.intval);
-		value.strval = battery_soh;
-		pr_info("battery_soh: %s\n", value.strval);
-		return sprintf(buf, "%s\n", value.strval);
-	}
+        if (off == POWER_SUPPLY_PROP_CSC_BATTERY_SOH) {
+                psy->get_property(psy, POWER_SUPPLY_PROP_CHARGE_FULL, &FCC);
+                psy->get_property(psy, POWER_SUPPLY_PROP_CHARGE_NOW_RAW, &RM);
+                psy->get_property(psy, POWER_SUPPLY_PROP_TEMP, &TEMP);
+                psy->get_property(psy, POWER_SUPPLY_PROP_VOLTAGE_NOW, &VOLT);
+                psy->get_property(psy, POWER_SUPPLY_PROP_CURRENT_NOW, &BATT_CUR);
+                psy->get_property(psy, POWER_SUPPLY_PROP_CYCLE_COUNT, &CC);
+                snprintf(battery_soh, sizeof(battery_soh), "FCC=%d(mAh), DC=4600(mAH), RM=%d(mAh), TMP=%d(C), VOLT=%d(mV), CUR=%d(mA), CC=%d",
+                                FCC.intval/1000, RM.intval/1000, TEMP.intval/10, VOLT.intval/1000, BATT_CUR.intval/1000, CC.intval);
+                value.strval = battery_soh;
+                pr_info("battery_soh: %s\n", value.strval);
+                return sprintf(buf, "%s\n", value.strval);
+        }
 
 	if (off == POWER_SUPPLY_PROP_TYPE)
 		value.intval = psy->type;

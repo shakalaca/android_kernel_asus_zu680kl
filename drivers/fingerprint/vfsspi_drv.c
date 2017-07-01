@@ -742,13 +742,14 @@ static ssize_t vfs_platform_wakeup_store(struct device *dev,
 			       struct device_attribute *attr,
 			       const char *buf, size_t count) {
 	struct vfs_platform_dev_data *vfs_platform_dev = dev_get_drvdata(dev);
-	long wakeup;
+	int wakeup;
 
-	wakeup = !strcmp(buf, "true");
+	pr_err("%s: wakeup %s\n", __func__, buf);
+	wakeup = !strncmp(buf, "true", 4);
 	if (vfs_platform_dev->wakeup_source != wakeup) {
 		irq_set_irq_wake(vfs_platform_dev->gpio_irq, wakeup);
 		vfs_platform_dev->wakeup_source = wakeup;
-		pr_info("%s: wakeup %ld\n", __func__, wakeup);
+		pr_err("%s: wakeup %d\n", __func__, wakeup);
 	}
 	return count;
 }

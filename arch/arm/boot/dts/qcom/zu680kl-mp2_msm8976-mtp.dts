@@ -12,11 +12,11 @@
  */
 
 /dts-v1/;
-#include "zu680kl-er1_msm8976.dtsi"
-#include "zu680kl-er1_msm8976-mtp.dtsi"
+#include "msm8976.dtsi"
+#include "msm8976-mtp.dtsi"
 
 / {
-	model = "Qualcomm Technologies, Inc. ASUS ZU680KL MP2 (8976)";
+	model = "ASUSTEK ZU680KL MP2 (8976)";
 	compatible = "qcom,msm8976-mtp", "qcom,msm8976", "qcom,mtp";
 	qcom,board-id= <8 6>;
 };

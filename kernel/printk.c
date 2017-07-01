@@ -1021,6 +1021,7 @@ static bool printk_time;
 #endif
 module_param_named(time, printk_time, bool, S_IRUGO | S_IWUSR);
 
+int boot_after_60sec = 0;
 static size_t print_time(u64 ts, char *buf)
 {
 	unsigned long rem_nsec;
@@ -1032,6 +1033,9 @@ static size_t print_time(u64 ts, char *buf)
 
 	if (!buf)
 		return snprintf(NULL, 0, "[%5lu.000000] ", (unsigned long)ts);
+
+	if (boot_after_60sec == 0 && ts >= 60)
+                boot_after_60sec = 1;
 
 	return sprintf(buf, "[%5lu.%06lu] ",
 		       (unsigned long)ts, rem_nsec / 1000);
@@ -2203,11 +2207,12 @@ void resume_console(void)
 		if (gic_irq_cnt > 0) {
 			for (i = 0; i < gic_irq_cnt; i++) {
 				printk("Wakeup from IRQ %d\n", gic_resume_irq[i]);
-				ASUSEvtlog("[PM] IRQs triggered: %d", gic_resume_irq[i]);
+				ASUSEvtlog("[PM] IRQs triggered: %d\n", gic_resume_irq[i]);
 			}
 			gic_irq_cnt = 0;  //clear log count
 		}
 		if (gpio_resume){
+			printk("Wakeup from GPIO %d\n", gpio_resume);
 			ASUSEvtlog("[PM] GPIO triggered: %d\n", gpio_resume);
 			gpio_resume = 0; // reset gpio resume
 		}

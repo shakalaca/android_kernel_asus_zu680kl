@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2015-2016, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -37,6 +37,7 @@
 #include "../codecs/wcd9335.h"
 #include "../codecs/wcd-mbhc-v2.h"
 #include "../codecs/wsa881x.h"
+#include <linux/switch.h>
 
 #define DRV_NAME "msm8952-slimbus-wcd"
 
@@ -65,15 +66,12 @@
 
 #define ADSP_STATE_READY_TIMEOUT_MS 50
 #define HS_STARTWORK_TIMEOUT        4000
-#define CAP_STARTWORK_TIMEOUT 5000
-#define CAP_NOISE_VOL (12)
 
 #define Q6AFE_LPASS_OSR_CLK_9_P600_MHZ	0x927C00
 #define MAX_AUX_CODECS	4
 
 #define WSA8810_NAME_1 "wsa881x.20170211"
 #define WSA8810_NAME_2 "wsa881x.20170212"
-
 static DEFINE_MUTEX(spk_playing_lock);
 
 enum btsco_rates {
@@ -105,10 +103,11 @@ static bool codec_reg_done;
 static int mi2s_rx_bit_format = SNDRV_PCM_FORMAT_S16_LE;
 
 static int msm_proxy_rx_ch = 2;
-static int spk_media_vol = 0;
-static bool isSpkOn = false;
+static int spk_media_vol;
+static bool isSpkOn;
 static void *adsp_state_notifier;
 extern void notify_speaker_status(int, int);
+static struct switch_dev audiowizard_sdev;
 
 static int msm8952_enable_codec_mclk(struct snd_soc_codec *codec, int enable,
 					bool dapm);
@@ -170,6 +169,26 @@ static struct wcd9xxx_mbhc_config wcd9xxx_mbhc_cfg = {
 	.key_code[6] = 0,
 	.key_code[7] = 0,
 };
+
+void set_audiowizard_state(int state) {
+
+	if (audiowizard_sdev.dev)
+		switch_set_state(&audiowizard_sdev, state);
+}
+EXPORT_SYMBOL(set_audiowizard_state);
+
+int get_audiowizard_state(void) {
+
+	int state;
+
+	if (audiowizard_sdev.dev)
+		state = switch_get_state(&audiowizard_sdev);
+	else
+		state = -ENODEV;
+
+	return state;
+}
+EXPORT_SYMBOL(get_audiowizard_state);
 
 static void *def_tasha_mbhc_cal(void)
 {
@@ -530,6 +549,10 @@ static int mi2s_rx_bit_format_get(struct snd_kcontrol *kcontrol,
 {
 
 	switch (mi2s_rx_bit_format) {
+	case SNDRV_PCM_FORMAT_S24_3LE:
+		ucontrol->value.integer.value[0] = 2;
+		break;
+
 	case SNDRV_PCM_FORMAT_S24_LE:
 		ucontrol->value.integer.value[0] = 1;
 		break;
@@ -551,6 +574,9 @@ static int mi2s_rx_bit_format_put(struct snd_kcontrol *kcontrol,
 	struct snd_ctl_elem_value *ucontrol)
 {
 	switch (ucontrol->value.integer.value[0]) {
+	case 2:
+		mi2s_rx_bit_format = SNDRV_PCM_FORMAT_S24_3LE;
+		break;
 	case 1:
 		mi2s_rx_bit_format = SNDRV_PCM_FORMAT_S24_LE;
 		break;
@@ -625,6 +651,10 @@ static int slim5_rx_bit_format_get(struct snd_kcontrol *kcontrol,
 {
 
 	switch (slim5_rx_bit_format) {
+	case SNDRV_PCM_FORMAT_S24_3LE:
+		ucontrol->value.integer.value[0] = 2;
+		break;
+
 	case SNDRV_PCM_FORMAT_S24_LE:
 		ucontrol->value.integer.value[0] = 1;
 		break;
@@ -646,6 +676,9 @@ static int slim5_rx_bit_format_put(struct snd_kcontrol *kcontrol,
 	struct snd_ctl_elem_value *ucontrol)
 {
 	switch (ucontrol->value.integer.value[0]) {
+	case 2:
+		slim5_rx_bit_format = SNDRV_PCM_FORMAT_S24_3LE;
+		break;
 	case 1:
 		slim5_rx_bit_format = SNDRV_PCM_FORMAT_S24_LE;
 		break;
@@ -662,6 +695,10 @@ static int slim0_rx_bit_format_get(struct snd_kcontrol *kcontrol,
 {
 
 	switch (slim0_rx_bit_format) {
+	case SNDRV_PCM_FORMAT_S24_3LE:
+		ucontrol->value.integer.value[0] = 2;
+		break;
+
 	case SNDRV_PCM_FORMAT_S24_LE:
 		ucontrol->value.integer.value[0] = 1;
 		break;
@@ -683,6 +720,9 @@ static int slim0_rx_bit_format_put(struct snd_kcontrol *kcontrol,
 	struct snd_ctl_elem_value *ucontrol)
 {
 	switch (ucontrol->value.integer.value[0]) {
+	case 2:
+		slim0_rx_bit_format = SNDRV_PCM_FORMAT_S24_3LE;
+		break;
 	case 1:
 		slim0_rx_bit_format = SNDRV_PCM_FORMAT_S24_LE;
 		break;
@@ -736,6 +776,9 @@ static int slim0_tx_bit_format_get(struct snd_kcontrol *kcontrol,
 			struct snd_ctl_elem_value *ucontrol)
 {
 	switch (slim0_tx_bit_format) {
+	case SNDRV_PCM_FORMAT_S24_3LE:
+		ucontrol->value.integer.value[0] = 2;
+		break;
 	case SNDRV_PCM_FORMAT_S24_LE:
 		ucontrol->value.integer.value[0] = 1;
 		break;
@@ -756,6 +799,9 @@ static int slim0_tx_bit_format_put(struct snd_kcontrol *kcontrol,
 	int rc = 0;
 
 	switch (ucontrol->value.integer.value[0]) {
+	case 2:
+		slim0_tx_bit_format = SNDRV_PCM_FORMAT_S24_3LE;
+		break;
 	case 1:
 		slim0_tx_bit_format = SNDRV_PCM_FORMAT_S24_LE;
 		break;
@@ -945,14 +991,10 @@ static int speaker_media_vol_put(struct snd_kcontrol *kcontrol,
 	spk_media_vol = ucontrol->value.integer.value[0];
 	pr_info("%s: speaker_media_vol_put = %d\n", __func__,
 						spk_media_vol);
-	if (spk_media_vol >= CAP_NOISE_VOL && isSpkOn) {
-		/* notify cap sensor threshold up */
-		pr_info("kcontrol: notify cap sensor threshold up\n");
-		notify_speaker_status(1, spk_media_vol);
-
-	} else if (isSpkOn) {
+	if (isSpkOn) {
 		/* notify cap sensor threshold down right now*/
-		pr_info("kcontrol: notify cap sensor threshold down\n");
+		pr_info("kcontrol: notify cap sensor threshold vol = %d\n",
+				 spk_media_vol);
 		notify_speaker_status(1, spk_media_vol);
 
 	} else {
@@ -969,13 +1011,13 @@ static const char *const slim0_tx_ch_text[] = {"One", "Two", "Three", "Four",
 						"Five", "Six", "Seven",
 						"Eight"};
 static const char *const vi_feed_ch_text[] = {"One", "Two"};
-static char const *rx_bit_format_text[] = {"S16_LE", "S24_LE"};
+static char const *rx_bit_format_text[] = {"S16_LE", "S24_LE", "S24_3LE"};
 static char const *slim0_rx_sample_rate_text[] = {"KHZ_48", "KHZ_96",
 					"KHZ_192", "KHZ_44P1"};
 static const char *const slim5_rx_ch_text[] = {"One", "Two"};
 static char const *slim5_rx_sample_rate_text[] = {"KHZ_48", "KHZ_96",
 	"KHZ_192", "KHZ_44P1"};
-static char const *slim5_rx_bit_format_text[] = {"S16_LE", "S24_LE"};
+static char const *slim5_rx_bit_format_text[] = {"S16_LE", "S24_LE", "S24_3LE"};
 static const char *const proxy_rx_ch_text[] = {"One", "Two", "Three", "Four",
 	"Five", "Six", "Seven", "Eight"};
 
@@ -983,12 +1025,13 @@ static const struct soc_enum msm_snd_enum[] = {
 	SOC_ENUM_SINGLE_EXT(2, spk_function),
 	SOC_ENUM_SINGLE_EXT(2, slim0_rx_ch_text),
 	SOC_ENUM_SINGLE_EXT(8, slim0_tx_ch_text),
-	SOC_ENUM_SINGLE_EXT(2, rx_bit_format_text),
+	SOC_ENUM_SINGLE_EXT(ARRAY_SIZE(rx_bit_format_text), rx_bit_format_text),
 	SOC_ENUM_SINGLE_EXT(ARRAY_SIZE(slim0_rx_sample_rate_text),
 				slim0_rx_sample_rate_text),
 	SOC_ENUM_SINGLE_EXT(2, vi_feed_ch_text),
 	SOC_ENUM_SINGLE_EXT(4, slim5_rx_sample_rate_text),
-	SOC_ENUM_SINGLE_EXT(2, slim5_rx_bit_format_text),
+	SOC_ENUM_SINGLE_EXT(ARRAY_SIZE(slim5_rx_bit_format_text),
+			    slim5_rx_bit_format_text),
 	SOC_ENUM_SINGLE_EXT(2, slim5_rx_ch_text),
 	SOC_ENUM_SINGLE_EXT(8, proxy_rx_ch_text),
 };
@@ -1561,18 +1604,21 @@ static int quat_mi2s_clk_ctl(struct snd_pcm_substream *substream, bool enable)
 
 	if (enable) {
 		if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK) {
-			if (mi2s_rx_bit_format == SNDRV_PCM_FORMAT_S24_LE)
+                      mi2s_rx_clk.clk_val2 = Q6AFE_LPASS_OSR_CLK_12_P288_MHZ;
+			if ((mi2s_rx_bit_format == SNDRV_PCM_FORMAT_S24_LE) ||
+				(mi2s_rx_bit_format ==
+						SNDRV_PCM_FORMAT_S24_3LE))
 				mi2s_rx_clk.clk_val1 =
 					Q6AFE_LPASS_IBIT_CLK_3_P072_MHZ;
 			else
 				mi2s_rx_clk.clk_val1 =
 					Q6AFE_LPASS_IBIT_CLK_1_P536_MHZ;
-			mi2s_rx_clk.clk_val2 = Q6AFE_LPASS_OSR_CLK_12_P288_MHZ;
 			ret = afe_set_lpass_clock(
 					AFE_PORT_ID_QUATERNARY_MI2S_RX,
 					&mi2s_rx_clk);
 		} else if (substream->stream == SNDRV_PCM_STREAM_CAPTURE) {
 			mi2s_tx_clk.clk_val1 = Q6AFE_LPASS_IBIT_CLK_1_P536_MHZ;
+			mi2s_tx_clk.clk_val2 = Q6AFE_LPASS_OSR_CLK_12_P288_MHZ;
 			ret = afe_set_lpass_clock(
 					AFE_PORT_ID_QUATERNARY_MI2S_TX,
 					&mi2s_tx_clk);
@@ -1592,6 +1638,7 @@ static int quat_mi2s_clk_ctl(struct snd_pcm_substream *substream, bool enable)
 				&mi2s_rx_clk);
 		} else if (substream->stream == SNDRV_PCM_STREAM_CAPTURE) {
 			mi2s_tx_clk.clk_val1 = Q6AFE_LPASS_IBIT_CLK_DISABLE;
+			mi2s_tx_clk.clk_val2 = Q6AFE_LPASS_OSR_CLK_DISABLE;
 			ret = afe_set_lpass_clock(
 				AFE_PORT_ID_QUATERNARY_MI2S_TX,
 				&mi2s_tx_clk);
@@ -1612,18 +1659,21 @@ static int quin_mi2s_sclk_ctl(struct snd_pcm_substream *substream, bool enable)
 
 	if (enable) {
 		if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK) {
-			if (mi2s_rx_bit_format == SNDRV_PCM_FORMAT_S24_LE)
+                      mi2s_rx_clk.clk_val2 = Q6AFE_LPASS_OSR_CLK_12_P288_MHZ;
+                      if ((mi2s_rx_bit_format == SNDRV_PCM_FORMAT_S24_LE) ||
+				(mi2s_rx_bit_format ==
+					SNDRV_PCM_FORMAT_S24_3LE))
 				mi2s_rx_clk.clk_val1 =
 					Q6AFE_LPASS_IBIT_CLK_3_P072_MHZ;
 			else
 				mi2s_rx_clk.clk_val1 =
 					Q6AFE_LPASS_IBIT_CLK_1_P536_MHZ;
-			mi2s_rx_clk.clk_val2 = Q6AFE_LPASS_OSR_CLK_12_P288_MHZ;
 			ret = afe_set_lpass_clock(
 					AFE_PORT_ID_QUINARY_MI2S_RX,
 					&mi2s_rx_clk);
 		} else if (substream->stream == SNDRV_PCM_STREAM_CAPTURE) {
 			mi2s_tx_clk.clk_val1 = Q6AFE_LPASS_IBIT_CLK_1_P536_MHZ;
+			mi2s_tx_clk.clk_val2 = Q6AFE_LPASS_OSR_CLK_12_P288_MHZ;
 			ret = afe_set_lpass_clock(
 					AFE_PORT_ID_QUINARY_MI2S_TX,
 					&mi2s_tx_clk);
@@ -1643,6 +1693,7 @@ static int quin_mi2s_sclk_ctl(struct snd_pcm_substream *substream, bool enable)
 					&mi2s_rx_clk);
 		} else if (substream->stream == SNDRV_PCM_STREAM_CAPTURE) {
 			mi2s_tx_clk.clk_val1 = Q6AFE_LPASS_IBIT_CLK_DISABLE;
+			mi2s_tx_clk.clk_val2 = Q6AFE_LPASS_OSR_CLK_DISABLE;
 			ret = afe_set_lpass_clock(
 					AFE_PORT_ID_QUINARY_MI2S_TX,
 					&mi2s_tx_clk);
@@ -1684,7 +1735,7 @@ void msm_quat_mi2s_snd_shutdown(struct snd_pcm_substream *substream)
 	struct msm8952_asoc_mach_data *pdata = snd_soc_card_get_drvdata(card);
 
 	mutex_lock(&spk_playing_lock);
-	isSpkOn =false;
+	isSpkOn = false;
 	mutex_unlock(&spk_playing_lock);
 	pr_debug("%s(): substream = %s  stream = %d, ext_pa = %d\n", __func__,
 		 substream->name, substream->stream, pdata->ext_pa);
@@ -1702,7 +1753,7 @@ void msm_quat_mi2s_snd_shutdown(struct snd_pcm_substream *substream)
 			return;
 		}
 	}
-	pr_info("%s: notify cap threshold Normal\n", __func__);
+	pr_info("%s: notify cap threshold to Normal\n", __func__);
 	cancel_delayed_work_sync(&pdata->cap_noise_dwork);
 	notify_speaker_status(0, spk_media_vol);
 }
@@ -1796,7 +1847,7 @@ int msm_quat_mi2s_snd_startup(struct snd_pcm_substream *substream)
 	}
 	mutex_lock(&spk_playing_lock);
 	isSpkOn = true;
-	pr_info("%s: notify cap threshold up\n", __func__);
+	pr_info("%s: notify cap threshold quat i2s start\n", __func__);
 	notify_speaker_status(1, spk_media_vol);
 	mutex_unlock(&spk_playing_lock);
 	return ret;
@@ -2576,6 +2627,12 @@ static int msm8952_asoc_machine_probe(struct platform_device *pdev)
 				__func__, ret);
 		goto err;
 	}
+
+	audiowizard_sdev.name = "audiowizard_notify";
+	ret = switch_dev_register(&audiowizard_sdev);
+	if (ret < 0)
+		pr_err("%s: failed to register audiowizrd switch device",
+			__func__);
 
 	return 0;
 err:

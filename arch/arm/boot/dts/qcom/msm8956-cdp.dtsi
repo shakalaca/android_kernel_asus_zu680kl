@@ -57,6 +57,14 @@
 		pinctrl-0 = <&gpio_key_active>;
 		pinctrl-1 = <&gpio_key_suspend>;
 
+		camera_focus {
+			label = "camera_focus";
+			gpios = <&msm_gpio 115 0x1>;
+			linux,input-type = <1>;
+			linux,code = <0x210>;
+			debounce-interval = <15>;
+		};
+
 		camera_snapshot {
 			label = "camera_snapshot";
 			gpios = <&msm_gpio 114 0x1>;
@@ -186,7 +194,8 @@
 	pinctrl-names = "active", "sleep";
 	pinctrl-0 = <&sdc3_clk_on &sdc3_cmd_on &sdc3_dat_on
 					&sdc3_wlan_gpio_active>;
-	pinctrl-1 = <&sdc3_clk_off &sdc3_cmd_off &sdc3_dat_off>;
+	pinctrl-1 = <&sdc3_clk_off &sdc3_cmd_off &sdc3_dat_off
+					&sdc3_wlan_gpio_sleep>;
 
 	status = "disabled";
 };

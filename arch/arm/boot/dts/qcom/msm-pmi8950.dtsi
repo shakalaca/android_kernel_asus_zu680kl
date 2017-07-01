@@ -28,6 +28,12 @@
 			reg = <0x800 0x100>;
 			qcom,secondary-pon-reset;
 			qcom,cfg-shutdown-for-hard-reset;
+
+			pon_perph_reg: qcom,pon_perph_reg {
+				regulator-name = "pon_spare_reg";
+				qcom,pon-spare-reg-addr = <0x8c>;
+				qcom,pon-spare-reg-bit = <1>;
+			};
 		};
 
 		pmi8950_vadc: vadc@3100 {
@@ -142,7 +148,7 @@
 			gpio@c000 {
 				reg = <0xc000 0x100>;
 				qcom,pin-num = <1>;
-				status = "disabled";
+				status = "ok";
 			};
 
 			gpio@c100 {
@@ -193,8 +199,8 @@
 			#size-cells = <1>;
 
 			qcom,iterm-ma = <100>;
-			qcom,float-voltage-mv = <4200>;
-			qcom,resume-delta-mv = <200>;
+			qcom,float-voltage-mv = <4380>;
+			qcom,resume-delta-mv = <100>;
 			qcom,chg-inhibit-fg;
 			qcom,rparasitic-uohm = <100000>;
 			qcom,bms-psy-name = "bms";
@@ -206,8 +212,9 @@
 			qcom,pmic-revid = <&pmi8950_revid>;
 			qcom,charge-unknown-battery;
 			qcom,force-aicl-rerun;
-			qcom,aicl-rerun-period-s = <180>;
-			smb1351,usb_switch_gpios = <&msm_gpio 115 0x0>;
+			qcom,aicl-rerun-period-s = <360>;
+			ADCPWREN-gpios01 = <&pmi8950_gpios 1 0x0>;
+			ADC_SW_EN = <&msm_gpio 115 0x0>;
 
 			qcom,chgr@1000 {
 				reg = <0x1000 0x100>;
@@ -314,7 +321,10 @@
 			qcom,pmic-revid = <&pmi8950_revid>;
 			qcom,cycle-counter-en;
 			qcom,capacity-learning-on;
-			qcom,fg-cutoff-voltage-mv = <3500>;
+			qcom,fg-cutoff-voltage-mv = <3400>;
+			qcom,vbat-estimate-diff-mv = <250>;
+			qcom,hold-soc-while-full;
+			qcom,ext-sense-type;
 
 			qcom,fg-soc@4000 {
 			status = "okay";
@@ -518,9 +528,10 @@
 			qcom,fs-curr-ua = <30000>;
 			qcom,en-phase-stag;
 			qcom,ibb-pwrup-dly = <8>;
-			qcom,led-strings-list = [00 01];
+			qcom,led-strings-list = [00 01 02];
 			qcom,en-ext-pfet-sc-pro;
 			qcom,cons-sync-write-delay-us = <1000>;
+			qcom,en-cabc;
 		};
 
 		flash_led: qcom,leds@d300 {
@@ -550,8 +561,8 @@
 				qcom,led-name = "led:flash_0";
 				qcom,default-led-trigger =
 						"flash0_trigger";
-				qcom,max-current = <1000>;
-				qcom,duration = <1280>;
+				qcom,max-current = <900>;
+				qcom,duration = <800>;
 				qcom,id = <0>;
 				qcom,current = <625>;
 			};
@@ -561,8 +572,8 @@
 				qcom,led-name = "led:flash_1";
 				qcom,default-led-trigger =
 						"flash1_trigger";
-				qcom,max-current = <1000>;
-				qcom,duration = <1280>;
+				qcom,max-current = <900>;
+				qcom,duration = <800>;
 				qcom,id = <1>;
 				qcom,current = <625>;
 			};
@@ -592,10 +603,13 @@
 				qcom,led-name = "led:switch";
 				qcom,default-led-trigger =
 						"switch_trigger";
-				qcom,max-current = <1000>;
-				qcom,duration = <1280>;
+				qcom,max-current = <900>;
+				qcom,duration = <800>;
 				qcom,id = <2>;
 				qcom,current = <625>;
+				reg0 {
+					regulator-name = "pon_spare_reg";
+				};
 			};
 		};
 

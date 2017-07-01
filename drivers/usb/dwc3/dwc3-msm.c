@@ -2364,10 +2364,8 @@ static int dwc3_msm_power_set_property_usb(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_PRESENT:
 		dev_dbg(mdwc->dev, "%s: notify xceiv event\n", __func__);
 		mdwc->vbus_active = val->intval;
-		
 		if(!mdwc->vbus_active)
 			ASUSEvtlog("[USB] set_chg_mode: None\n");
-
 		if (mdwc->otg_xceiv && !mdwc->ext_inuse && !mdwc->in_restart) {
 			if (mdwc->ext_xceiv.bsv == val->intval)
 				break;
@@ -2421,6 +2419,7 @@ static int dwc3_msm_power_set_property_usb(struct power_supply *psy,
 
 		if (mdwc->charger.chg_type != DWC3_INVALID_CHARGER)
 			mdwc->chg_state = USB_CHG_STATE_DETECTED;
+
 		if (evt_mode_string != NULL)
 			ASUSEvtlog("[USB] set_chg_mode: %s\n", evt_mode_string);
 

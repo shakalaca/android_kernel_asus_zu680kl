@@ -252,7 +252,7 @@ static int msm_voip_gain_put(struct snd_kcontrol *kcontrol,
 		goto done;
 	}
 
-	pr_info("%s: volume: %d ramp_duration: %d\n", __func__, volume,
+	pr_debug("%s: volume: %d ramp_duration: %d\n", __func__, volume,
 		ramp_duration);
 
 	voc_set_rx_vol_step(voc_get_session_id(VOIP_SESSION_NAME),

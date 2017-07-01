@@ -25,11 +25,12 @@
 #include <linux/mutex.h>
 #include <linux/input.h>
 #include <linux/log2.h>
-#include <linux/wakelock.h>
 #include <linux/regulator/driver.h>
 #include <linux/regulator/machine.h>
 #include <linux/regulator/of_regulator.h>
+#include <linux/wakelock.h>
 #include <linux/qpnp/power-on.h>
+#include <linux/reboot.h>
 
 #define CREATE_MASK(NUM_BITS, POS) \
 	((unsigned char) (((1 << (NUM_BITS)) - 1) << (POS)))
@@ -173,6 +174,8 @@ struct qpnp_pon {
 	struct list_head	list;
 	struct delayed_work	bark_work;
 	struct dentry		*debugfs;
+	struct wake_lock	press_lock;
+	struct wake_lock	press_lock_with_chargermode;
 	int			pon_trigger_reason;
 	int			pon_power_off_reason;
 	int			num_pon_reg;
@@ -185,11 +188,12 @@ struct qpnp_pon {
 	u8			warm_reset_reason2;
 	bool			is_spon;
 	bool			store_hard_reset_reason;
-	struct                  wake_lock press_lock;
-	struct			wake_lock press_lock_with_chargermode;
 };
 
+static struct delayed_work	kpdpwr_reboot_work;
 extern int g_charger_mode;
+extern int boot_after_60sec;
+extern bool asus_wdt_warm_reset;
 static struct qpnp_pon *sys_reset_dev;
 static DEFINE_MUTEX(spon_list_mutex);
 static LIST_HEAD(spon_dev_list);
@@ -686,6 +690,12 @@ qpnp_pon_input_dispatch(struct qpnp_pon *pon, u32 pon_type)
 	return 0;
 }
 
+static struct timer_list kpdpwr_6s_timer;
+void kpdpwr_hold_6s_callback(unsigned long data)
+{
+	schedule_delayed_work(&kpdpwr_reboot_work, 0);
+}
+
 static irqreturn_t qpnp_kpdpwr_irq(int irq, void *_pon)
 {
 	int rc;
@@ -704,6 +714,8 @@ static irqreturn_t qpnp_kpdpwr_irq(int irq, void *_pon)
 							pon->pon_input->name);
 			wake_lock(&pon->press_lock_with_chargermode);
 		}
+		if (boot_after_60sec)
+			mod_timer(&kpdpwr_6s_timer, jiffies + msecs_to_jiffies(6000));
 	} else {
 		pr_info("[%s] power button released\n", pon->pon_input->name);
 		if (g_charger_mode &&
@@ -712,6 +724,8 @@ static irqreturn_t qpnp_kpdpwr_irq(int irq, void *_pon)
 							pon->pon_input->name);
 			wake_unlock(&pon->press_lock_with_chargermode);
 		}
+		if (boot_after_60sec)
+			del_timer(&kpdpwr_6s_timer);
 	}
 	return IRQ_HANDLED;
 }
@@ -796,6 +810,16 @@ static irqreturn_t qpnp_pmic_wd_bark_irq(int irq, void *_pon)
 	panic("PMIC Watch dog triggered");
 
 	return IRQ_HANDLED;
+}
+
+static void kpdpwr_reboot_work_func(struct work_struct *work)
+{
+	pr_info("pon: hold power key for more than 6s. triggered %s reboot...\n",
+		asus_wdt_warm_reset ? "warm" : "cold");
+	if (asus_wdt_warm_reset)
+		kernel_restart("powerkey");
+	else
+		kernel_restart(NULL);
 }
 
 static void bark_work_func(struct work_struct *work)
@@ -1858,7 +1882,7 @@ static int qpnp_pon_probe(struct spmi_device *spmi)
 				"PMIC@SID%d: Unknown power-off reason\n",
 				pon->spmi->sid);
 		if (pon->spmi->sid == 0)
-			ASUSEvt_poweroff_reason = -1;
+                        ASUSEvt_poweroff_reason = -1;
 	} else {
 		pon->pon_power_off_reason = index;
 		dev_info(&pon->spmi->dev,
@@ -1866,19 +1890,19 @@ static int qpnp_pon_probe(struct spmi_device *spmi)
 				pon->spmi->sid,
 				qpnp_poff_reason[index]);
 		if (pon->spmi->sid == 0) {
-			ASUSEvt_poweroff_reason = index;
-			clr_poff = 0;
-			rc = spmi_ext_register_writel(pon->spmi->ctrl, pon->spmi->sid,
-				QPNP_POFF_REASON1(pon->base), &clr_poff, 1);
-			if (rc)
-				dev_err(&pon->spmi->dev,
-					"Unable to clear to QPNP_POFF_REASON1, rc(%d)\n", rc);
-			rc = spmi_ext_register_writel(pon->spmi->ctrl, pon->spmi->sid,
+                        ASUSEvt_poweroff_reason = index;
+                        clr_poff = 0;
+                        rc = spmi_ext_register_writel(pon->spmi->ctrl, pon->spmi->sid,
+                                QPNP_POFF_REASON1(pon->base), &clr_poff, 1);
+                        if (rc)
+                                dev_err(&pon->spmi->dev,
+                                        "Unable to clear to QPNP_POFF_REASON1, rc(%d)\n", rc);
+                        rc = spmi_ext_register_writel(pon->spmi->ctrl, pon->spmi->sid,
                                 QPNP_POFF_REASON2(pon->base), &clr_poff, 1);
                         if (rc)
                                 dev_err(&pon->spmi->dev,
                                         "Unable to clear to QPNP_POFF_REASON2, rc(%d)\n", rc);
-		}
+                }
 	}
 
 	if (pon->pon_trigger_reason == PON_SMPL ||
@@ -1960,6 +1984,7 @@ static int qpnp_pon_probe(struct spmi_device *spmi)
 	dev_set_drvdata(&spmi->dev, pon);
 
 	INIT_DELAYED_WORK(&pon->bark_work, bark_work_func);
+	INIT_DELAYED_WORK(&kpdpwr_reboot_work, kpdpwr_reboot_work_func);
 
 	/* register the PON configurations */
 	rc = qpnp_pon_config_init(pon);
@@ -2008,6 +2033,8 @@ static int qpnp_pon_probe(struct spmi_device *spmi)
 					"qcom,store-hard-reset-reason");
 
 	qpnp_pon_debugfs_init(spmi);
+
+	setup_timer(&kpdpwr_6s_timer, kpdpwr_hold_6s_callback, 0);
 	return 0;
 }
 
@@ -2018,6 +2045,7 @@ static int qpnp_pon_remove(struct spmi_device *spmi)
 	device_remove_file(&spmi->dev, &dev_attr_debounce_us);
 
 	cancel_delayed_work_sync(&pon->bark_work);
+	cancel_delayed_work_sync(&kpdpwr_reboot_work);
 
 	if (pon->pon_input)
 		input_unregister_device(pon->pon_input);

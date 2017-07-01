@@ -729,7 +729,6 @@ static int set_config(struct usb_composite_dev *cdev,
 	     number, c ? c->label : "unconfigured");
 
 	printk("[USB] speed:%d\n",gadget->speed);
-	ASUSEvtlog("[USB] speed:%d\n",gadget->speed);
 
 	if (!c)
 		goto done;
@@ -1368,11 +1367,11 @@ composite_setup(struct usb_gadget *gadget, const struct usb_ctrlrequest *ctrl)
 		switch (w_value >> 8) {
 
 		case USB_DT_DEVICE:
-			if (w_length == 0x40) {
-				if(detectMACByConfig == 1){
-					hostTypeChanged = 1;
+			if(w_length==0x40){
+				if(detectMACByConfig==1){
+					hostTypeChanged=1;
 				}
-				detectMACByConfig = 0;
+				detectMACByConfig=0;
 			}
 			cdev->desc.bNumConfigurations =
 				count_configs(cdev, USB_DT_DEVICE);
@@ -1407,11 +1406,11 @@ composite_setup(struct usb_gadget *gadget, const struct usb_ctrlrequest *ctrl)
 				break;
 			/* FALLTHROUGH */
 		case USB_DT_CONFIG:
-			if (w_length == 0x4) {
-				if(detectMACByConfig == 0){
-					hostTypeChanged = 1;
+			if(w_length==0x4){
+				if(detectMACByConfig==0){
+					hostTypeChanged=1;
 				}
-				detectMACByConfig = 1;
+				detectMACByConfig=1;
 			}
 			value = config_desc(cdev, w_value);
 			if (value >= 0)

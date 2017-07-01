@@ -787,7 +787,7 @@ static void qpnp_wled_work(struct work_struct *work)
 		}
 	}
 
-	if (!!level != wled->prev_state) {
+
 		rc = qpnp_wled_module_en(wled, wled->ctrl_base, !!level);
 
 		if (rc) {
@@ -795,7 +795,7 @@ static void qpnp_wled_work(struct work_struct *work)
 						level ? "en" : "dis");
 			goto unlock_mutex;
 		}
-	}
+
 
 	wled->prev_state = !!level;
 unlock_mutex:

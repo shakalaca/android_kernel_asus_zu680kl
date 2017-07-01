@@ -152,7 +152,7 @@
 		qcom,mipitx-phy-byteclk = <124800000>;
 		qcom,mipitx-hs-transmit-timeout = <0x752fff>;
 		qcom,mipitx-lp-receive-timeout = <0x26>;
-		qcom,mipitx-hs-lp-switching-time-count = <0x2e>;
+		qcom,mipitx-hs-lp-switching-time-count = <0x2d>;
 		qcom,mipitx-pll-lock-count = <0x780>;
 		qcom,mipitx-clock-lane-switching-time-count = <0x42001f>;
 		qcom,mipitx-lp-equivalent-byteclk = <0x7>;

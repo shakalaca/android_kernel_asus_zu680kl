@@ -42,6 +42,7 @@
 #include <asm/unistd.h>
 
 #include "timeconst.h"
+#include <linux/rtc.h>
 
 /*
  * The timezone where the local system is located.  Used as a default by some
@@ -163,9 +164,15 @@ int do_sys_settimeofday(const struct timespec *tv, const struct timezone *tz)
 {
 	static int firsttime = 1;
 	int error = 0;
+	struct rtc_time ori_tm, new_tm;
+	struct timespec tmp_time;
 
 	if (tv && !timespec_valid(tv))
 		return -EINVAL;
+
+	getnstimeofday(&tmp_time);
+	tmp_time.tv_sec -= sys_tz.tz_minuteswest * 60;
+	rtc_time_to_tm(tmp_time.tv_sec, &ori_tm);
 
 	error = security_settime(tv, tz);
 	if (error)
@@ -179,9 +186,29 @@ int do_sys_settimeofday(const struct timespec *tv, const struct timezone *tz)
 			if (!tv)
 				warp_clock();
 		}
+		getnstimeofday(&tmp_time);
+		tmp_time.tv_sec -= sys_tz.tz_minuteswest * 60;
+		rtc_time_to_tm(tmp_time.tv_sec, &new_tm);
+		ASUSEvtlog("[UTS] RTC update: Current Datetime: %04d-%02d-%02d %02d:%02d:%02d,"
+			" Update Datetime: %04d-%02d-%02d %02d:%02d:%02d\n",
+			ori_tm.tm_year + 1900, ori_tm.tm_mon + 1, ori_tm.tm_mday,
+			ori_tm.tm_hour, ori_tm.tm_min, ori_tm.tm_sec,
+			new_tm.tm_year + 1900, new_tm.tm_mon + 1, new_tm.tm_mday,
+			new_tm.tm_hour, new_tm.tm_min, new_tm.tm_sec);
 	}
-	if (tv)
+	if (tv) {
+		memcpy(&tmp_time, tv, sizeof(*tv));
+		tmp_time.tv_sec -= sys_tz.tz_minuteswest * 60;
+		rtc_time_to_tm(tmp_time.tv_sec, &new_tm);
+		ASUSEvtlog("[UTS] RTC update: Current Datetime: %04d-%02d-%02d %02d:%02d:%02d,"
+                        " Update Datetime: %04d-%02d-%02d %02d:%02d:%02d\n",
+                        ori_tm.tm_year + 1900, ori_tm.tm_mon + 1, ori_tm.tm_mday,
+                        ori_tm.tm_hour, ori_tm.tm_min, ori_tm.tm_sec,
+                        new_tm.tm_year + 1900, new_tm.tm_mon + 1, new_tm.tm_mday,
+                        new_tm.tm_hour, new_tm.tm_min, new_tm.tm_sec);
+
 		return do_settimeofday(tv);
+	}
 	return 0;
 }
 

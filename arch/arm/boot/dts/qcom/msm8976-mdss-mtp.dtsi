@@ -51,9 +51,43 @@
 	qcom,mdss-dsi-mode-sel-gpio-state = "dsc_mode";
 };
 
+&dsi_jdi_lpm068a253a_1080p_video {
+       qcom,panel-supply-entries = <&dsi_panel_pwr_supply>;
+       qcom,mdss-dsi-pan-fps-update = "dfps_immediate_porch_mode_hfp";
+};
+
+&dsi_jdi_lpm068a253a_1080p_cmd {
+       qcom,panel-supply-entries = <&dsi_panel_pwr_supply>;
+       qcom,mdss-dsi-pan-fps-update = "dfps_immediate_porch_mode_hfp";
+};
+
+&dsi_jdi_lpm068a253a_1080p_60_cmd {
+       qcom,panel-supply-entries = <&dsi_panel_pwr_supply>;
+       qcom,mdss-dsi-pan-fps-update = "dfps_immediate_porch_mode_hfp";
+};
+
+&dsi_adv7533_720p {
+	qcom,panel-supply-entries = <&dsi_panel_pwr_supply>;
+};
+
+&dsi_adv7533_1080p {
+	qcom,panel-supply-entries = <&dsi_panel_pwr_supply>;
+};
+
+&soc {
+       iris2_io{
+               compatible = "pw,iris2_io";
+               qcom,iris-1v1-1v8-en-gpio = <&msm_gpio 129 0>;
+               qcom,iris-rst-gpio = <&msm_gpio 63 0>;
+               clocks = <&clock_gcc clk_bb_clk2>, <&clock_gcc clk_bimc_usb_clk>, <&clock_gcc clk_snoc_usb_clk>;
+               clock-names = "iris2_clk", "bimc_clk", "snoc_clk";
+       };
+};
+
 &pmx_mdss {
-	qcom,num-grp-pins = <3>;
-	qcom,pins = <&gp 25>, <&gp 66>, <&gp 107>;
+	qcom,num-grp-pins = <4>;
+	/* 25: panel reset, 103: panel enable(IOVCC 1.8V), 63: iris reset, 129: iris power  */
+	qcom,pins = <&gp 25>, <&gp 103>, <&gp 63>, <&gp 129>;
 };
 
 &pmx_mdss_te {
@@ -65,22 +99,17 @@
 	pinctrl-names = "mdss_default", "mdss_sleep";
 	pinctrl-0 = <&mdss_dsi_active &mdss_te_active>;
 	pinctrl-1 = <&mdss_dsi_suspend &mdss_te_suspend>;
-	qcom,dsi-pref-prim-pan = <&dsi_dual_nt35597_video>;
-
+	qcom,dsi-pref-prim-pan = <&dsi_jdi_lpm068a253a_1080p_cmd>;
+	qcom,dsi-pref-prim-pan-with-iris = <&dsi_jdi_lpm068a253a_1080p_cmd>;
 	qcom,platform-reset-gpio = <&msm_gpio 25 0>;
-	qcom,platform-bklight-en-gpio = <&msm_gpio 66 0>;
-	qcom,panel-mode-gpio = <&msm_gpio 107 0>;
+	qcom,platform-enable-gpio = <&msm_gpio 103 0>;
+	qcom,platform-TPrst-gpio = <&msm_gpio 64 0>;
+	qcom,platform-TPirq-gpio = <&msm_gpio 65 0x2008>;
 };
 
 &mdss_dsi1 {
-	pinctrl-names = "mdss_default", "mdss_sleep";
-	pinctrl-0 = <&mdss_dsi_active &mdss_te_active>;
-	pinctrl-1 = <&mdss_dsi_suspend &mdss_te_suspend>;
-	qcom,dsi-pref-prim-pan = <&dsi_dual_nt35597_video>;
-
-	qcom,platform-reset-gpio = <&msm_gpio 25 0>;
-	qcom,platform-bklight-en-gpio = <&msm_gpio 66 0>;
-	qcom,panel-mode-gpio = <&msm_gpio 107 0>;
+	qcom,dsi-pref-prim-pan = <&dsi_adv7533_1080p>;
+	qcom,dsi-pref-prim-pan-with-iris = <&dsi_adv7533_1080p>;
 };
 
 &labibb {

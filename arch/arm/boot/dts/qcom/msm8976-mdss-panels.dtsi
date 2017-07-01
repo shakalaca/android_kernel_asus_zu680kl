@@ -23,20 +23,14 @@
 #include "dsi-panel-adv7533-1080p-video.dtsi"
 #include "dsi-panel-adv7533-720p-video.dtsi"
 #include "dsi-panel-nt35523-dualmipi-wqxga-video.dtsi"
+#include "dsi-panel-jdi-lpm068a253a-1080p-video.dtsi"
+#include "dsi-panel-jdi-lpm068a253a-1080p-cmd.dtsi"
+#include "dsi-panel-jdi-lpm068a253a-1080p-60-cmd.dtsi"
 
 &soc {
 	dsi_panel_pwr_supply: dsi_panel_pwr_supply {
 		#address-cells = <1>;
 		#size-cells = <0>;
-
-		qcom,panel-supply-entry@0 {
-			reg = <0>;
-			qcom,supply-name = "vdd";
-			qcom,supply-min-voltage = <2850000>;
-			qcom,supply-max-voltage = <2850000>;
-			qcom,supply-enable-load = <100000>;
-			qcom,supply-disable-load = <100>;
-		};
 
 		qcom,panel-supply-entry@1 {
 			reg = <1>;

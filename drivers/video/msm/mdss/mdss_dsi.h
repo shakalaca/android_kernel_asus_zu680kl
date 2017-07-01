@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2015, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2016, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -348,7 +348,7 @@ struct panel_horizontal_idle {
 #define DSI_ALL_CLKS	((DSI_CORE_CLKS) | (DSI_LINK_CLKS))
 
 #define DSI_EV_PLL_UNLOCKED		0x0001
-#define DSI_EV_MDP_FIFO_UNDERFLOW	0x0002
+#define DSI_EV_DLNx_FIFO_UNDERFLOW	0x0002
 #define DSI_EV_DSI_FIFO_EMPTY		0x0004
 #define DSI_EV_DLNx_FIFO_OVERFLOW	0x0008
 #define DSI_EV_LP_RX_TIMEOUT		0x0010
@@ -425,6 +425,7 @@ struct mdss_dsi_ctrl_pdata {
 	u32 dsi_irq_mask;
 	struct mdss_hw *dsi_hw;
 	struct mdss_intf_recovery *recovery;
+	struct mdss_intf_recovery *mdp_callback;
 
 	struct dsi_panel_cmds on_cmds;
 	struct dsi_panel_cmds post_dms_on_cmds;
@@ -524,6 +525,7 @@ void mdss_dsi_clk_req(struct mdss_dsi_ctrl_pdata *ctrl,
 void mdss_dsi_controller_cfg(int enable,
 				struct mdss_panel_data *pdata);
 void mdss_dsi_sw_reset(struct mdss_dsi_ctrl_pdata *ctrl_pdata, bool restore);
+int mdss_dsi_wait_for_lane_idle(struct mdss_dsi_ctrl_pdata *ctrl);
 
 irqreturn_t mdss_dsi_isr(int irq, void *ptr);
 irqreturn_t hw_vsync_handler(int irq, void *data);
@@ -736,6 +738,12 @@ static inline bool mdss_dsi_is_ctrl_clk_slave(struct mdss_dsi_ctrl_pdata *ctrl)
 {
 	return mdss_dsi_is_hw_config_split(ctrl->shared_data) &&
 		(ctrl->ndx == DSI_CTRL_CLK_SLAVE);
+}
+
+static inline bool mdss_dsi_is_ctrl_clk_master(struct mdss_dsi_ctrl_pdata *ctrl)
+{
+	return mdss_dsi_is_hw_config_split(ctrl->shared_data) &&
+		(ctrl->ndx == DSI_CTRL_CLK_MASTER);
 }
 
 static inline bool mdss_dsi_is_te_based_esd(struct mdss_dsi_ctrl_pdata *ctrl)

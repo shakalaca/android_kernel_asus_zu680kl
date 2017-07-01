@@ -34,6 +34,7 @@ static unsigned char ov8856_otp_1[OTP_SIZE] = {0};
 static unsigned char ov8856_otp_2[OTP_SIZE] = {0};
 static int ois_mode_err;
 static int ois_accel_gain_err;
+#define VCM_NOISE_WA 1
 
 /* Defines for OTP Data Registers */
 #define T4K35_OTP_START_ADDR	0x3504
@@ -1575,6 +1576,7 @@ static const struct file_operations dbg_dump_vcm_fw_fops = {
 	.read		= dbg_dump_vcm_fw_read,
 };
 
+#if VCM_NOISE_WA
 static int vcm_min_max_proc_read(struct seq_file *buf, void *v)
 {
 	uint16_t vcm_Z1_minus_25um = 0;
@@ -1595,7 +1597,7 @@ static const struct file_operations vcm_min_max_proc_fops = {
 	.llseek = seq_lseek,
 	.release = single_release,
 };
-
+#endif
 
 int msm_debugfs_init(struct msm_sensor_ctrl_t *s_ctrl,
 		struct msm_camera_sensor_slave_info *slave_info)
@@ -1659,7 +1661,9 @@ int msm_debugfs_init(struct msm_sensor_ctrl_t *s_ctrl,
 		proc_create(REAR_OTP_THERMAL_FILE, 0664, NULL, &rear_thermal_proc_fops);
 		proc_create(IMX318_RW_PROC_FILE, 0664, NULL, &imx318_rw_proc_fops);
 		proc_create(VCM_Z1_Z2_PROC_FILE, 0664, NULL, &vcm_Z1_Z2_proc_fops);
+#if VCM_NOISE_WA
 		proc_create(VCM_MIN_MAX_PROC_FILE, 0664, NULL, &vcm_min_max_proc_fops);
+#endif
 	} else if (!strcmp(sensor_name,"ov8856")) {
 		(void) debugfs_create_file("CameraOTP", S_IRUGO,
 			debugfs_dir, NULL, &dbg_dump_ov8856_otp_fops);

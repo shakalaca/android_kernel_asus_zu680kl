@@ -406,7 +406,7 @@ static int msm_voice_gain_put(struct snd_kcontrol *kcontrol,
 		goto done;
 	}
 
-	pr_info("%s: volume: %d session_id: %#x ramp_duration: %d\n", __func__,
+	pr_debug("%s: volume: %d session_id: %#x ramp_duration: %d\n", __func__,
 		volume, session_id, ramp_duration);
 
 	voc_set_rx_vol_step(session_id, RX_PATH, volume, ramp_duration);
@@ -431,7 +431,7 @@ static int msm_voice_mute_put(struct snd_kcontrol *kcontrol,
 		goto done;
 	}
 
-	pr_info("%s: mute=%d session_id=%#x ramp_duration=%d\n", __func__,
+	pr_debug("%s: mute=%d session_id=%#x ramp_duration=%d\n", __func__,
 		mute, session_id, ramp_duration);
 
 	ret = voc_set_tx_mute(session_id, TX_PATH, mute, ramp_duration);
@@ -482,7 +482,7 @@ static int msm_voice_rx_device_mute_put(struct snd_kcontrol *kcontrol,
 		goto done;
 	}
 
-	pr_info("%s: mute=%d session_id=%#x ramp_duration=%d\n", __func__,
+	pr_debug("%s: mute=%d session_id=%#x ramp_duration=%d\n", __func__,
 		 mute, session_id, ramp_duration);
 
 	voc_set_device_mute(session_id, VSS_IVOLUME_DIRECTION_RX,

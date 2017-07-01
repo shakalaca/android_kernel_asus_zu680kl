@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2015-2016, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -610,10 +610,10 @@ static int cmdq_request(struct mmc_host *mmc, struct mmc_request *mrq)
 	}
 
 	if (mrq->cmdq_req->cmdq_req_flags & DCMD) {
-		cmdq_prep_dcmd_desc(mmc, mrq);
-		cq_host->mrq_slot[DCMD_SLOT] = mrq;
 		if (cq_host->ops->pm_qos_update)
 			cq_host->ops->pm_qos_update(mmc, NULL, true);
+		cmdq_prep_dcmd_desc(mmc, mrq);
+		cq_host->mrq_slot[DCMD_SLOT] = mrq;
 		/* DCMD's are always issued on a fixed slot */
 		tag = DCMD_SLOT;
 		goto ring_doorbell;
@@ -628,6 +628,9 @@ static int cmdq_request(struct mmc_host *mmc, struct mmc_request *mrq)
 		}
 	}
 
+	if (cq_host->ops->pm_qos_update)
+		cq_host->ops->pm_qos_update(mmc, NULL, true);
+
 	task_desc = (__le64 __force *)get_desc(cq_host, tag);
 
 	cmdq_prep_task_desc(mrq, &data, 1,
@@ -641,14 +644,9 @@ static int cmdq_request(struct mmc_host *mmc, struct mmc_request *mrq)
 		return err;
 	}
 
-	if (cq_host->ops->pm_qos_update)
-		cq_host->ops->pm_qos_update(mmc, NULL, true);
-
 	BUG_ON(cmdq_readl(cq_host, CQTDBR) & (1 << tag));
 
 	cq_host->mrq_slot[tag] = mrq;
-	if (cq_host->ops->set_tranfer_params)
-		cq_host->ops->set_tranfer_params(mmc);
 
 ring_doorbell:
 	/* Ensure the task descriptor list is flushed before ringing doorbell */
@@ -908,6 +906,10 @@ static int cmdq_halt(struct mmc_host *mmc, bool halt)
 		}
 		return retries ? 0 : -ETIMEDOUT;
 	} else {
+		if (cq_host->ops->set_transfer_params)
+			cq_host->ops->set_transfer_params(mmc);
+		if (cq_host->ops->set_block_size)
+			cq_host->ops->set_block_size(mmc);
 		if (cq_host->ops->set_data_timeout)
 			cq_host->ops->set_data_timeout(mmc, 0xf);
 		if (cq_host->ops->clear_set_irqs)

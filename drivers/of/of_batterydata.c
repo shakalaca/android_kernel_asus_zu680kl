@@ -356,11 +356,11 @@ struct device_node *of_batterydata_get_best_profile(
 	 */
 	for_each_child_of_node(batterydata_container_node, node) {
 		of_property_read_string(node, "qcom,battery-type",
-						&battery_type);
-		if(strcmp(battery_type, batt_name) == 0) {
-			printk("of_batterydata_get_best_profile load %s\n",battery_type);
-			return node;
-		}
+                                                &battery_type);
+                if(strcmp(battery_type, batt_name) == 0) {
+                        printk("of_batterydata_get_best_profile load %s\n",battery_type);
+                        return node;
+                }
 		if (batt_type != NULL) {
 			rc = of_property_read_string(node, "qcom,battery-type",
 							&battery_type);

@@ -78,6 +78,7 @@
 
 #define USB_DEFAULT_SYSTEM_CLOCK 80000000	/* 80 MHz */
 
+extern int g_reverse_charger_mode;
 enum msm_otg_phy_reg_mode {
 	USB_PHY_REG_OFF,
 	USB_PHY_REG_ON,
@@ -199,8 +200,6 @@ static int g_host_charging_mode = 1;
 #else
 static int g_host_charging_mode = 0;
 #endif
-extern int g_reverse_charger_mode;
-static int g_power_supply_mode =  0;
 static int g_id_delay = 0;
 //ASUS_BSP+++ Landice "[ZE500KL][USBH][NA][Spec] Enable manual mode switching"
 #include <linux/proc_fs.h>
@@ -252,7 +251,6 @@ bool msm_otg_id_state(void) {
 EXPORT_SYMBOL(msm_otg_id_state);
 
 //ASUS_BSP+++ Landice "[ZE500KL][USBH][NA][Spec] Enable manual mode switching"
-
 static void asus_otg_mode_switch(enum usb_mode_type req_mode)
 {
 	struct msm_otg *motg = the_msm_otg;
@@ -424,47 +422,6 @@ const struct file_operations asus_otg_proc_host_charging_mode_fops = {
 };
 /* ASUS_BSP--- LandiceFu "[ZE500KL][USBH][NA][spec] Add proc file host_charging_mode (ac/unknown) in case the current is not enough for charging" */
 
-static int asus_power_supply_mode_show(struct seq_file *s, void *unused)
-{
-	if (g_power_supply_mode == 1)
-		seq_printf(s, "power supply CDP\n");
-	else
-		seq_printf(s, "power supply SDP\n");
-	return 0;
-}
-
-static int asus_power_supply_mode_open(struct inode *inode, struct file *file)
-{
-	return single_open(file, asus_power_supply_mode_show, PDE_DATA(inode));
-}
-
-static ssize_t asus_power_supply_mode_write(struct file *file, const char __user *ubuf, size_t count, loff_t *ppos)
-{
-	char buf[10];
-	memset(buf, 0x00, sizeof(buf));
-
-	if (copy_from_user(&buf, ubuf, min_t(size_t, sizeof(buf) - 1, count))) {
-		return -EFAULT;
-	}
-
-	if (!strncmp(buf, "cdp", 2)) {
-		g_power_supply_mode = 1;
-		printk("[usb_otg] Set host to CDP\n");
-	} else {
-		g_power_supply_mode = 0;
-		return -EINVAL;
-	}
-
-	return count;
-}
-
-const struct file_operations asus_power_supply_mode_fops = {
-	.open = asus_power_supply_mode_open,
-	.read = seq_read,
-	.write = asus_power_supply_mode_write,
-	.llseek = seq_lseek,
-	.release = single_release,
-};
 static int asus_otg_procfs_init(struct msm_otg *motg)
 {
 	struct proc_dir_entry *proc_entry;
@@ -490,13 +447,6 @@ static int asus_otg_procfs_init(struct msm_otg *motg)
 		return -ENODEV;
 	}
 /* ASUS_BSP--- LandiceFu "[ZE500KL][USBH][NA][spec] Add proc file host_charging_mode (ac/unknown) in case the current is not enough for charging" */
-	proc_entry = proc_create_data("power_supply", S_IRUGO | S_IWUSR, asus_otg_proc_root,
-			&asus_power_supply_mode_fops, motg);
-	if (!proc_entry) {
-		remove_proc_entry("power_supply", asus_otg_proc_root);
-		asus_otg_proc_root = NULL;
-		return -ENODEV;
-	}
 	return 0;
 }
 
@@ -4634,7 +4584,7 @@ static void msm_otg_sm_work(struct work_struct *w)
 			else
 				msm_hsusb_vbus_power(motg, 1);
 
-			if(g_power_supply_mode || g_reverse_charger_mode)
+			if(g_reverse_charger_mode)
 				dm_pull_function(motg);
 
 			msm_otg_start_timer(motg, TA_WAIT_VRISE, A_WAIT_VRISE);
@@ -5063,7 +5013,7 @@ static irqreturn_t msm_otg_irq(int irq, void *data)
 		 * HCD Acks PCI interrupt. We use this to switch
 		 * between different OTG states.
 		 */
-		if(g_power_supply_mode || g_reverse_charger_mode) {
+		if(g_reverse_charger_mode) {
 			if ((pc & PORTSC_CSC) && (pc & PORTSC_CCS)) {
 				msm_chg_block_off(motg);
 				printk("[usb_otg] OTG plugin disable Dm pull up\n");
@@ -5286,7 +5236,6 @@ static void msm_id_status_w(struct work_struct *w)
 			return;
 		}
 	}
-
 
 	if (!init)
 		init = true;
@@ -7254,7 +7203,6 @@ static int msm_otg_probe(struct platform_device *pdev)
 #else
 	g_id_delay = msecs_to_jiffies(1000);
 #endif
-
 	if (!pm8921_charger_register_vbus_sn(NULL)) {
 		/* if pm8921 use legacy implementation */
 		dev_dbg(motg->phy.dev, "%s: legacy support\n", __func__);

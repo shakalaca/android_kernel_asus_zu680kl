@@ -19,7 +19,8 @@
 #include <media/msmb_camera.h>
 #include "msm_camera_i2c.h"
 #include "msm_camera_dt_util.h"
-#include "../io/msm_camera_io_util.h"
+#include "msm_camera_io_util.h"
+
 
 #define DEFINE_MSM_MUTEX(mutexname) \
 	static struct mutex mutexname = __MUTEX_INITIALIZER(mutexname)

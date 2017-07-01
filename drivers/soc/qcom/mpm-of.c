@@ -83,10 +83,6 @@ static unsigned int *msm_mpm_irqs_m2a;
 #define SCLK_HZ (32768)
 #define ARCH_TIMER_HZ (19200000)
 
-// Avoid entering vmin to prevent from sleep of death
-extern bool g_fuse_info;
-extern bool g_enter_vmin;
-
 struct msm_mpm_device_data {
 	uint16_t *irqs_m2a;
 	unsigned int irqs_m2a_size;
@@ -138,7 +134,7 @@ enum {
 	MSM_MPM_DEBUG_NON_DETECTABLE_IRQ_IDLE = BIT(3),
 };
 
-static int msm_mpm_debug_mask = 3;
+static int msm_mpm_debug_mask = 1;
 module_param_named(
 	debug_mask, msm_mpm_debug_mask, int, S_IRUGO | S_IWUSR | S_IWGRP
 );
@@ -582,10 +578,9 @@ void msm_mpm_exit_sleep(bool from_idle)
 		pending = msm_mpm_read(MSM_MPM_REG_STATUS, i);
 		pending &= enabled_intr[i];
 
-		if (!from_idle)
-			if (MSM_MPM_DEBUG_PENDING_IRQ & msm_mpm_debug_mask)
-				pr_info("%s: enabled_intr.%d pending.%d: 0x%08x 0x%08lx\n",
-					__func__, i, i, enabled_intr[i], pending);
+		if (MSM_MPM_DEBUG_PENDING_IRQ & msm_mpm_debug_mask)
+			pr_info("%s: enabled_intr.%d pending.%d: 0x%08x 0x%08lx\n",
+				__func__, i, i, enabled_intr[i], pending);
 
 		k = find_first_bit(&pending, 32);
 		while (k < 32) {

@@ -669,12 +669,12 @@ config KEYBOARD_CROS_EC
 	  module will be called cros_ec_keyb.
 
 config KEYBOARD_CAP12LF1552
-	tristate "Microchip Capacitive Touch Sensor with Proximity Detection"
-	depends on I2C
-	help
-	 Say Y here to enable the CAP12LF1552 driver
+        tristate "Microchip Capacitive Touch Sensor with Proximity Detection"
+        depends on I2C
+        help
+          Say Y here to enable the CAP12LF1552 driver
 
-	 To compile this driver as a module, choose M here: the
-	 module will be called cap12LF1552.
+          To compile this driver as a module, choose M here: the
+          module will be called cap12LF1552.
 
 endif

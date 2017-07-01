@@ -64,9 +64,9 @@ struct agg_work {
  * @skb:        Socket buffer ("packet") to modify
  * @hdrlen:     Number of bytes of header data which should not be included in
  *              MAP length field
+ * @pad:        Specify if padding the MAP packet to make it 4 byte aligned is
+ *              necessary
  *
- * @pad: Specify if padding the MAP packet to make it 4 byte aligned is
- * necessary 
  * Padding is calculated and set appropriately in MAP header. Mux ID is
  * initialized to 0.
  *
@@ -93,11 +93,20 @@ struct rmnet_map_header_s *rmnet_map_add_map_header(struct sk_buff *skb,
 	memset(map_header, 0, sizeof(struct rmnet_map_header_s));
 
 	if (pad == RMNET_MAP_NO_PAD_BYTES) {
-	map_header->pkt_len = htons(map_datalen);
-	return map_header;
+		map_header->pkt_len = htons(map_datalen);
+		return map_header;
 	}
- 
+
 	padding = ALIGN(map_datalen, 4) - map_datalen;
+
+	if (padding == 0)
+		goto done;
+
+	if ((skb->dev->features & NETIF_F_GSO) &&
+	    skb_is_nonlinear(skb) && unlikely((padding != 0))) {
+		LOGE("pad:%d required for non linear skb", padding);
+		BUG();
+	}
 
 	if (skb_tailroom(skb) < padding)
 		return 0;
@@ -106,6 +115,7 @@ struct rmnet_map_header_s *rmnet_map_add_map_header(struct sk_buff *skb,
 	LOGD("pad: %d", padding);
 	memset(padbytes, 0, padding);
 
+done:
 	map_header->pkt_len = htons(map_datalen + padding);
 	map_header->pad_len = padding&0x3F;
 
@@ -169,7 +179,7 @@ struct sk_buff *rmnet_map_deaggregate(struct sk_buff *skb,
 
 	/* Sanity check */
 	ip_byte = (skbn->data[4]) & 0xF0;
-	if (ip_byte != 0x40 && ip_byte != 0x60) {
+	if (!RMNET_MAP_GET_CD_BIT(skbn) && ip_byte != 0x40 && ip_byte != 0x60) {
 		LOGM("Unknown IP type: 0x%02X", ip_byte);
 		rmnet_kfree_skb(skbn, RMNET_STATS_SKBFREE_DEAGG_UNKOWN_IP_TYP);
 		return 0;

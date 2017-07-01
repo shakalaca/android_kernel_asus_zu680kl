@@ -53,7 +53,7 @@
 #define MAX_CPU_CTX_SIZE	2048
 
 extern int qpnp_pon_system_pwr_off(enum pon_power_off_type type);
-static bool asus_wdt_warm_reset = false;
+bool asus_wdt_warm_reset = false;
 
 static struct workqueue_struct *wdog_wq;
 static struct msm_watchdog_data *wdog_data;

@@ -132,8 +132,8 @@ enum rmnet_map_agg_state_e {
 #define RMNET_MAP_COMMAND_UNSUPPORTED 2
 #define RMNET_MAP_COMMAND_INVALID     3
 
-#define RMNET_MAP_NO_PAD_BYTES 0
-#define RMNET_MAP_ADD_PAD_BYTES 1 
+#define RMNET_MAP_NO_PAD_BYTES        0
+#define RMNET_MAP_ADD_PAD_BYTES       1
 
 uint8_t rmnet_map_demultiplex(struct sk_buff *skb);
 struct sk_buff *rmnet_map_deaggregate(struct sk_buff *skb,

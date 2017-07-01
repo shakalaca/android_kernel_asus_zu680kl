@@ -693,9 +693,9 @@ ifeq ($(shell $(CONFIG_SHELL) $(srctree)/scripts/gcc-goto.sh $(CC)), y)
 endif
 
 ifneq ($(BUILD_NUMBER),)
-        KBUILD_CPPFLAGS += -DASUS_SW_VER=\"$(BUILD_NUMBER)\"
+        KBUILD_CPPFLAGS += -DASUS_SW_VER=\"$(TARGET_SKU)-$(BUILD_NUMBER)\"
 else
-        KBUILD_CPPFLAGS += -DASUS_SW_VER=\"$(ASUS_BUILD_PROJECT)_ENG\"
+        KBUILD_CPPFLAGS += -DASUS_SW_VER=\"$(TARGET_SKU)-$(ASUS_BUILD_PROJECT)_ENG\"
 endif
 
 include $(srctree)/scripts/Makefile.kasan

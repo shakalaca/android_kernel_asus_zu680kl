@@ -19,6 +19,7 @@ uint16_t FW_version[2];
 uint16_t chipID;
 uint16_t f0_data[CAL_MSG_F0*2];
 
+bool newKdata = true;
 
 extern int ErrCode1;
 extern int ErrCode2;
@@ -283,10 +284,12 @@ int Olivia_device_Load_Calibration_Value(struct msm_laser_focus_ctrl_t *dev_t){
 			10235 > data[SIZE_OF_OLIVIA_CALIBRATION_DATA+1]){
 			Settings[CONFIDENCE10] =  data[SIZE_OF_OLIVIA_CALIBRATION_DATA];
 			Settings[CONFIDENCE_THD] = data[SIZE_OF_OLIVIA_CALIBRATION_DATA+1];
+			newKdata = true;
 		}
 		else{
 			data[SIZE_OF_OLIVIA_CALIBRATION_DATA] = DEFAULT_CONFIDENCE10;
 			data[SIZE_OF_OLIVIA_CALIBRATION_DATA+1] = DEFAULT_CONFIDENCE_THD;
+			newKdata = false;
 		}
 
 		if(g_factory)
@@ -360,7 +363,7 @@ int Read_Kdata_From_File(struct seq_file *vfile, uint16_t *cal_data){
 
 
 #define	MCPU_SWITCH_TIMEOUT_ms		15
-#define	MEASURE_TIME_OUT_ms		100
+#define	MEASURE_TIME_OUT_ms		120
 
 int Verify_Range_Data_Ready(struct msm_laser_focus_ctrl_t *dev_t){
 	
@@ -401,7 +404,7 @@ bool compareConfidence(uint16_t confidence, uint16_t Range, uint16_t thd, uint16
 
 uint16_t thd = 16;
 uint16_t limit = 1500;
-uint8_t thd_near_mm = 100; 
+uint8_t thd_near_mm = 0; 
 
 int	Read_Range_Data(struct msm_laser_focus_ctrl_t *dev_t){
 	
@@ -411,8 +414,6 @@ int	Read_Range_Data(struct msm_laser_focus_ctrl_t *dev_t){
 	int errcode;
 	int confirm=0;
 	
-	//int buf[3] = {0,0,0};
-
 	uint16_t IT_verify;
 
 	int confA = 1300;
@@ -423,13 +424,14 @@ int	Read_Range_Data(struct msm_laser_focus_ctrl_t *dev_t){
 	limit = Settings[DISTANCE_THD];
 	thd_near_mm = Settings[NEAR_LIMIT];
 
-		CCI_I2C_WrByte(dev_t, 0x18, 0x06);
-		CCI_I2C_WrByte(dev_t, 0x19, 0x20);
-		CCI_I2C_RdWord(dev_t, I2C_DATA_PORT, &IT_verify);
+	CCI_I2C_WrByte(dev_t, 0x18, 0x06);
+	CCI_I2C_WrByte(dev_t, 0x19, 0x20);
+	CCI_I2C_RdWord(dev_t, I2C_DATA_PORT, &IT_verify);
 	
+	confA = Settings[CONFIDENCE10];
+	confC = Settings[CONFIDENCE_THD];
+	ItB =  Settings[IT];
 
-
-//
 	init_debug_raw_data();
 	
       	status = CCI_I2C_RdWord(dev_t, RESULT_REGISTER, &RawRange);
@@ -441,54 +443,164 @@ int	Read_Range_Data(struct msm_laser_focus_ctrl_t *dev_t){
 
 	error_status = RawRange&ERROR_CODE_MASK;
 
+	CCI_I2C_RdWord(dev_t, 0x0A, &RawConfidence);
+	if (status < 0)
+            	return status;
+       
+	debug_raw_confidence = RawConfidence;
+	confidence_level = (RawConfidence&0x7ff0)>>4;
+			
 
+	if(RawRange&VALID_DATA){
+		if(!confirm){
+			if(IT_verify < ItB){
+				if(confidence_level < confA){
+					confirm =1;
+					errcode = RANGE_ERR_NOT_ADAPT;
+					Range =	OUT_OF_RANGE;					
+				}
+			}
+			else{
+				if(( ItB*(confidence_level) < ItB*confA- (IT_verify - ItB)*(confC - confA) )){
+					confirm =2;
+					errcode = RANGE_ERR_NOT_ADAPT;
+					Range =	OUT_OF_RANGE;										
+				}
+			}
+		}
+		if(!confirm && error_status==NO_ERROR && Range == 0){
+			confirm=3;
+			errcode = RANGE_ERR_NOT_ADAPT;
+			Range =OUT_OF_RANGE;			
+		}
+		if(!confirm&& error_status==NO_ERROR && compareConfidence(confidence_level,Range,thd,limit)){
+			confirm=4;
+			errcode = RANGE_ERR_NOT_ADAPT;
+			Range =OUT_OF_RANGE;	
+		}
+		if(!confirm&&error_status==GENERAL_ERROR){
+			confirm=5;
+			errcode = RANGE_ERR_NOT_ADAPT;
+			Range =OUT_OF_RANGE;
+		}
+		if(!confirm&&error_status==NEAR_FIELD){
+			confirm=6;
+			errcode = RANGE_ADAPT;
+			Range =thd_near_mm;
+		}
+		if(!confirm&&error_status==FAR_FIELD){
+			confirm=7;
+			errcode = RANGE_ADAPT;
+			Range =OUT_OF_RANGE;
+		}		
+		if(!confirm&&Range==2047){
+			confirm=8;
+			errcode = RANGE_ADAPT;
+			Range =OUT_OF_RANGE;
+		}
+		if(!confirm&&Range>=limit){
+			confirm=9;
+			errcode = RANGE_ADAPT;
+			Range =OUT_OF_RANGE;
+		}
+		if(!confirm){
+			confirm =0;
+			if(Range <= 100 && !g_factory)
+				errcode = RANGE_ADAPT_WITH_LESS_ACCURACY;
+			else
+				errcode = RANGE_ADAPT;
+		}
+
+	}
+	else{
+		confirm=10;
+		Range=OUT_OF_RANGE;
+		errcode = RANGE_ERR_NOT_ADAPT;	
+	}
+
+
+	ErrCode1 = errcode;
+	Range1 = Range;
+
+	if((Laser_log_cnt==LOG_SAMPLE_RATE-1)||(Laser_log_cnt==LOG_SAMPLE_RATE-2)||proc_log_cnt){
+		LOG_Handler(LOG_CDBG,"%s: conf(%d)  confA(%d) confC(%d) ItB(%d) IT_verify(0x2006:%d)\n", __func__, confidence_level, confA,confC,ItB,IT_verify);
+		LOG_Handler(LOG_CDBG, "%s: status(%d) thd(%d) limit(%d) near(%d) Confidence(%d)\n", __func__,
+			error_status>>13, thd, limit, thd_near_mm, confidence_level);
+		LOG_Handler(LOG_CDBG, "%s: Range(%d) ErrCode(%d) RawRange(%d) case(%d)\n", __func__,Range,errcode,(RawRange&DISTANCE_MASK)>>2, confirm);	
+	}
+
+	//reset cnt for case that use both proc and ioctrl
+	proc_log_cnt=0;
+
+	return Range;
+	
+
+}
+
+int	Read_Range_Data_OldKdata(struct msm_laser_focus_ctrl_t *dev_t){
+	
+	uint16_t RawRange = 0, Range = 0, error_status =0;
+	uint16_t RawConfidence = 0, confidence_level =0;
+	int status;
+	int errcode;
+	int confirm=0;
+	
+	uint16_t IT_verify;
+
+	int confA = 1300;
+	int confC = 5600;
+	int ItB = 5000;
+
+	thd = Settings[CONFIDENCE_FACTOR];
+	limit = Settings[DISTANCE_THD];
+	thd_near_mm = Settings[NEAR_LIMIT];
+
+	CCI_I2C_WrByte(dev_t, 0x18, 0x06);
+	CCI_I2C_WrByte(dev_t, 0x19, 0x20);
+	CCI_I2C_RdWord(dev_t, I2C_DATA_PORT, &IT_verify);
+	
+	confA = Settings[CONFIDENCE10];
+	confC = Settings[CONFIDENCE_THD];
+	ItB =  Settings[IT];
+
+	init_debug_raw_data();
+	
+      	status = CCI_I2C_RdWord(dev_t, RESULT_REGISTER, &RawRange);
+	if (status < 0)
+             	return status;
+
+	debug_raw_range = RawRange;
+	Range = (RawRange&DISTANCE_MASK)>>2;
+
+	error_status = RawRange&ERROR_CODE_MASK;
+
+	CCI_I2C_RdWord(dev_t, 0x0A, &RawConfidence);
+	if (status < 0)
+            	return status;
+       
+	debug_raw_confidence = RawConfidence;
+	confidence_level = (RawConfidence&0x7ff0)>>4;
+	
 		
 	if(RawRange&VALID_DATA){
 			
-			Range = (RawRange&DISTANCE_MASK)>>2;
-
-			errcode = 0;
-			CCI_I2C_RdWord(dev_t, 0x0A, &RawConfidence);
-			if (status < 0)
-            		 	return status;
-       
-			debug_raw_confidence = RawConfidence;
-			confidence_level = (RawConfidence&0x7ff0)>>4;
-			//LOG_Handler(LOG_DBG,"%s: confidence level is: %d (Raw data:%d)\n", __func__, confidence_level, RawConfidence);
-
-/*
-		if(g_factory){
-			if(Sysfs_read_word_seq("/factory/Olivia_ConfA.txt",buf,3)>=0){
-				confA = buf[0];
-
-				confC = buf[1];
-
-				ItB = buf[2];	
-			}
-		}
-*/
-		confA = Settings[CONFIDENCE10];
-		confC = Settings[CONFIDENCE_THD];
-		ItB =  Settings[IT];
-		
-		if(IT_verify < ItB){
-			if(!confirm && confidence_level < confA){
-				errcode = RANGE_ERR_NOT_ADAPT;
-				Range =	OUT_OF_RANGE;
-				confirm = 15;
-			}	
-		}
-		else{
-			if(!confirm&&( ItB*(confidence_level) < ItB*confA- (IT_verify - ItB)*(confC - confA) )){
-				errcode = RANGE_ERR_NOT_ADAPT;
-				Range =	OUT_OF_RANGE;
-				confirm = 16;
-			}
-		}
-
-
-////
 		if((error_status==NO_ERROR)){
+			errcode = 0;
+		
+			if(IT_verify < ItB){
+				if(!confirm && confidence_level < confA){
+					errcode = RANGE_ERR_NOT_ADAPT;
+					Range =	OUT_OF_RANGE;
+					confirm = 15;
+				}	
+			}
+			else{
+				if(!confirm&&( ItB*(confidence_level) < ItB*confA- (IT_verify - ItB)*(confC - confA) )){
+					errcode = RANGE_ERR_NOT_ADAPT;
+					Range =	OUT_OF_RANGE;
+					confirm = 16;
+				}
+			}
 
 			if(!confirm && Range == 0){
 				errcode = RANGE_ADAPT;
@@ -520,42 +632,40 @@ int	Read_Range_Data(struct msm_laser_focus_ctrl_t *dev_t){
 				Range =	OUT_OF_RANGE;	
 				confirm =13;				
 			}
-			
-		
+
+			if(!confirm && Range<100 && !g_factory){
+				errcode = RANGE_ADAPT_WITH_LESS_ACCURACY;
+				confirm =11;					
+			}
+
+				
 			if(!confirm){
 				errcode = RANGE_ADAPT;
 				confirm =11;					
 			}
-
-
-////
-
-					
-
-////
 			
 		}
 		else{
 
-			if(!confirm && (error_status==NEAR_FIELD)){
+			if(error_status==NEAR_FIELD){
 				errcode = RANGE_ADAPT;
 				Range = 0;
 				confirm = 1; 	
 			}
 			
-			if(!confirm && (error_status==FAR_FIELD && confidence_level==0)){
+			if(error_status==FAR_FIELD && confidence_level==0){
 				errcode = RANGE_ADAPT;
 				Range =	OUT_OF_RANGE;
 				confirm = 2;
 			}
 			
-			if(!confirm && (error_status==FAR_FIELD && confidence_level > 0)){
+			if(error_status==FAR_FIELD && confidence_level > 0){
 				errcode = RANGE_ERR_NOT_ADAPT;
 				Range =	OUT_OF_RANGE;
 				confirm = 3;
 			}
 			
-			if(!confirm && (error_status==GENERAL_ERROR)){
+			if(error_status==GENERAL_ERROR){
 				errcode = RANGE_ERR_NOT_ADAPT;
 				Range =	OUT_OF_RANGE;
 				confirm = 4;
@@ -564,15 +674,15 @@ int	Read_Range_Data(struct msm_laser_focus_ctrl_t *dev_t){
 		}
 	} 
 	else {
-		if(!confirm && (error_status==NEAR_FIELD)){
+		if(error_status==NEAR_FIELD){
 			Range = 0;
 			confirm =5;
 		}
-		else if(!confirm && (error_status==NO_ERROR)){
+		else if(error_status==NO_ERROR){
 			Range = OUT_OF_RANGE;
 			confirm =6;
 		}
-		else if (!confirm){
+		else{
 			Range = OUT_OF_RANGE;
 			confirm =7;
 		}
@@ -582,25 +692,15 @@ int	Read_Range_Data(struct msm_laser_focus_ctrl_t *dev_t){
 
 
 
-
-	if(timedMeasure){
-		ErrCode2 = ErrCode1;
-		Range2 = Range1;
-	}
 	ErrCode1 = errcode;
 	Range1 = Range;
 
-
-
-
-
-if((Laser_log_cnt==LOG_SAMPLE_RATE-1)||(Laser_log_cnt==LOG_SAMPLE_RATE-2)||proc_log_cnt){
-	LOG_Handler(LOG_CDBG,"%s: conf(%d)  confA(%d) confC(%d) ItB(%d) IT_verify(0x2006:%d)\n", __func__, confidence_level, confA,confC,ItB,IT_verify);
-	LOG_Handler(LOG_CDBG, "%s: status(%d) thd(%d) limit(%d) near(%d) Confidence(%d)\n", __func__,
-		error_status>>13, thd, limit, thd_near_mm, confidence_level);
-	LOG_Handler(LOG_CDBG, "%s: Range(%d) ErrCode(%d) RawRange(%d) case(%d)\n", __func__,Range,errcode,(RawRange&DISTANCE_MASK)>>2, confirm);	
-}
-
+	if((Laser_log_cnt==LOG_SAMPLE_RATE-1)||(Laser_log_cnt==LOG_SAMPLE_RATE-2)||proc_log_cnt){
+		LOG_Handler(LOG_CDBG,"%s: conf(%d)  confA(%d) confC(%d) ItB(%d) IT_verify(0x2006:%d)\n", __func__, confidence_level, confA,confC,ItB,IT_verify);
+		LOG_Handler(LOG_CDBG, "%s: status(%d) thd(%d) limit(%d) near(%d) Confidence(%d)\n", __func__,
+			error_status>>13, thd, limit, thd_near_mm, confidence_level);
+		LOG_Handler(LOG_CDBG, "%s: Range(%d) ErrCode(%d) RawRange(%d) case(%d)\n", __func__,Range,errcode,(RawRange&DISTANCE_MASK)>>2, confirm);	
+	}
 
 	//reset cnt for case that use both proc and ioctrl
 	proc_log_cnt=0;
@@ -623,7 +723,11 @@ int Perform_measurement(struct msm_laser_focus_ctrl_t *dev_t)
 		status = Verify_Range_Data_Ready(dev_t);
 		if(status < 0) goto read_err;			
 
-		Range = Read_Range_Data(dev_t);
+		if(newKdata)
+			Range = Read_Range_Data(dev_t);
+		else
+			Range = Read_Range_Data_OldKdata(dev_t);
+
 		if(Range < 0){
 			ErrCode1 = RANGE_ERR_NOT_ADAPT;
 			Range1 = OUT_OF_RANGE;

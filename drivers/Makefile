@@ -170,7 +170,8 @@ obj-$(CONFIG_ESOC)		+= esoc/
 obj-$(CONFIG_BIF)		+= bif/
 obj-$(CONFIG_SENSORS)		+= sensors/
 obj-$(CONFIG_SENSORS_SSC)	+= sensors/
-obj-y				+= fingerprint/
+obj-$(CONFIG_FINGERPRINT)	+= fingerprint/
+
 # DTS_EAGLE START
 obj-$(CONFIG_DTS_EAGLE)     += dts_eagle/
-# DTS_EAGLE END 
+# DTS_EAGLE END

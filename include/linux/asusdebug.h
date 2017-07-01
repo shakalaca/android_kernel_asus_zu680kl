@@ -193,7 +193,8 @@ extern unsigned int RTB_BUFFER;
 #define ASUS_EVTLOG_MAX_ITEM (20)
 /*ASUS-BBSP SubSys Health Record+++*/
 #define SUBSYS_HEALTH_MEDICAL_TABLE_PATH "/asdf/SubSysMedicalTable"
-#define SUBSYS_NUM 4 /* MODEM, WCNSS, ADSP VENUS */
+#define SUBSYS_BUS_ROOT "/sys/bus/msm_subsys/devices"
+#define SUBSYS_NUM_MAX 10
 #define SUBSYS_W_MAXLEN (170) /*%04d-%02d-%02d %02d:%02d:%02d : [SSR]:name reason*/
 #define SUBSYS_R_MAXLEN (512)
 #define SUBSYS_C_MAXLEN (30)

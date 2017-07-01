@@ -144,6 +144,57 @@ EXPORT_SYMBOL(g_ASUS_hwID);
 EXPORT_SYMBOL(g_ASUS_projID);
 #endif
 
+#ifdef CONFIG_PCBID_FLAG
+static int of_get_pcbid_data(void)
+{
+	struct device_node *np;
+	const char *pcbid_str;
+	int value;
+
+	pr_info("%s: Get PCBID info.\n", __func__);
+
+	np = of_find_compatible_node(NULL, NULL, "android,firmware");
+	if (np == NULL) {
+		pr_err("Fail to get pcbid though dt\n");
+		return 1;
+	}
+
+	pcbid_str = of_get_property(np, "pcbid", NULL);
+	if (pcbid_str == NULL)
+		pr_err("Fail to get pcbid though dt\n");
+	else
+		pr_info("PCBID: Get PCBID: %s\n", pcbid_str);
+
+	pcbid_str = of_get_property(np, "HW_REV", NULL);
+	if (pcbid_str == NULL)
+		pr_err("Fail to get HW REV though dt\n");
+	else if (!kstrtoint(pcbid_str, 0, &value)) {
+		g_ASUS_hwID = value;
+		pr_info("PCBID: Get HW REV: %d\n", g_ASUS_hwID);
+	}
+
+	pcbid_str = of_get_property(np, "PROJECT_ID", NULL);
+	if (pcbid_str == NULL)
+		pr_err("Fail to get PROJECT ID though dt\n");
+	else if (!kstrtoint(pcbid_str, 0, &value)) {
+		g_ASUS_projID = value;
+		pr_info("PCBID: Get PROJECT ID: %d\n", g_ASUS_projID);
+	}
+
+	return 0;
+}
+#endif
+
+char evtlog_bootup_reason[50];
+EXPORT_SYMBOL(evtlog_bootup_reason);
+static int set_ASUSEvt_pon_reason(char *str)
+{
+
+        strcpy(evtlog_bootup_reason, str);
+        return 0;
+}
+__setup("androidboot.bootreason=", set_ASUSEvt_pon_reason);
+
 int g_reverse_charger_mode = 0;
 EXPORT_SYMBOL(g_reverse_charger_mode);
 static int set_reverse_charger_mode(char *str)
@@ -196,69 +247,6 @@ static int set_ftm_mode(char *str)
 }
 __setup("androidboot.pre-ftm=", set_ftm_mode);
 
-bool g_fuse_info = false;
-EXPORT_SYMBOL(g_fuse_info);
-
-static int set_fuse_info(char *str)
-{
-    g_fuse_info = strcmp("Y", str) == 0 ? true : false;
-    pr_info("%s: g_fuse_info=%s\n",  __func__, g_fuse_info ? "true" : "false");
-    return 0;
-}
-__setup("SB=", set_fuse_info);
-
-bool g_enter_vmin = false;
-EXPORT_SYMBOL(g_enter_vmin);
-
-static int set_enter_vmin(char *str)
-{
-    g_enter_vmin = strcmp("Y", str) == 0 ? true : false;
-    pr_info("%s: g_enter_vmin=%s\n",  __func__, g_enter_vmin ? "true" : "false");
-    return 0;
-}
-__setup("enter_vmin=", set_enter_vmin);
-
-#ifdef CONFIG_PCBID_FLAG
-static int of_get_pcbid_data(void)
-{
-	struct device_node *np;
-	const char *pcbid_str;
-	int value;
-
-	pr_info("%s: Get PCBID info.\n", __func__);
-
-	np = of_find_compatible_node(NULL, NULL, "android,firmware");
-	if (np == NULL) {
-		pr_err("Fail to get pcbid though dt\n");
-		return 1;
-	}
-
-	pcbid_str = of_get_property(np, "pcbid", NULL);
-	if (pcbid_str == NULL)
-		pr_err("Fail to get pcbid though dt\n");
-	else
-		pr_info("PCBID: Get PCBID: %s\n", pcbid_str);
-
-	pcbid_str = of_get_property(np, "HW_REV", NULL);
-	if (pcbid_str == NULL)
-		pr_err("Fail to get HW REV though dt\n");
-	else if (!kstrtoint(pcbid_str, 0, &value)) {
-		g_ASUS_hwID = value;
-		pr_info("PCBID: Get HW REV: %d\n", g_ASUS_hwID);
-	}
-
-	pcbid_str = of_get_property(np, "PROJECT_ID", NULL);
-	if (pcbid_str == NULL)
-		pr_err("Fail to get PROJECT ID though dt\n");
-	else if (!kstrtoint(pcbid_str, 0, &value)) {
-		g_ASUS_projID = value;
-		pr_info("PCBID: Get PROJECT ID: %d\n", g_ASUS_projID);
-	}
-
-	return 0;
-}
-#endif
-
 /*
  * If set, this is an indication to the drivers that reset the underlying
  * device before going ahead with the initialization otherwise driver might
@@ -278,16 +266,6 @@ static int __init set_reset_devices(char *str)
 }
 
 __setup("reset_devices", set_reset_devices);
-
-char evtlog_bootup_reason[50];
-EXPORT_SYMBOL(evtlog_bootup_reason);
-static int set_ASUSEvt_pon_reason(char *str)
-{
-
-	strcpy(evtlog_bootup_reason, str);
-	return 0;
-}
-__setup("androidboot.bootreason=", set_ASUSEvt_pon_reason);
 
 static const char * argv_init[MAX_INIT_ARGS+2] = { "init", NULL, };
 const char * envp_init[MAX_INIT_ENVS+2] = { "HOME=/", "TERM=linux", NULL, };
@@ -668,6 +646,7 @@ asmlinkage void __init start_kernel(void)
 #ifdef CONFIG_PCBID_FLAG
 	of_get_pcbid_data();
 #endif
+
 	/*
 	 * These use large bootmem allocations and must precede
 	 * kmem_cache_init()

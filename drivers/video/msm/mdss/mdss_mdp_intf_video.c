@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2015, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2016, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -120,7 +120,7 @@ int mdss_mdp_video_addr_setup(struct mdss_data_type *mdata,
 
 	for (i = 0; i < count; i++) {
 		head[i].base = mdata->mdss_io.base + offsets[i];
-		pr_debug("adding Video Intf #%d offset=0x%x virt=%p\n", i,
+		pr_debug("adding Video Intf #%d offset=0x%x virt=%pK\n", i,
 				offsets[i], head[i].base);
 		head[i].ref_cnt = 0;
 		head[i].intf_num = i + MDSS_MDP_INTF0;
@@ -599,7 +599,7 @@ static int mdss_mdp_video_intfs_stop(struct mdss_mdp_ctl *ctl,
 		pr_err("Intf %d not in use\n", (inum + MDSS_MDP_INTF0));
 		return -ENODEV;
 	}
-	pr_debug("stop ctl=%d video Intf #%d base=%p", ctl->num, ctx->intf_num,
+	pr_debug("stop ctl=%d video Intf #%d base=%pK", ctl->num, ctx->intf_num,
 			ctx->base);
 
 	ret = mdss_mdp_video_ctx_stop(ctl, pinfo, ctx);
@@ -617,7 +617,7 @@ static int mdss_mdp_video_intfs_stop(struct mdss_mdp_ctl *ctl,
 			pr_err("Intf %d not in use\n", (inum + MDSS_MDP_INTF0));
 			return -ENODEV;
 		}
-		pr_debug("stop ctl=%d video Intf #%d base=%p", ctl->num,
+		pr_debug("stop ctl=%d video Intf #%d base=%pK", ctl->num,
 				sctx->intf_num, sctx->base);
 
 		ret = mdss_mdp_video_ctx_stop(ctl, pinfo, sctx);
@@ -665,20 +665,19 @@ static void iris_video_cadence_check(struct mdss_mdp_ctl *ctl)
 	static int badedit_cnt;
 
 	struct mdss_overlay_private *mdp5_data = mfd_to_mdp5_data(ctl->mfd);
-	struct mdss_mdp_pipe *pipe;
 	struct mdss_mdp_video_ctx *ctx;
 	u32 frame_addr, frame_count, frames;
 	bool bad = false;
+	char *addr;
 
 	if (!mdp5_data)
 		return;
-	list_for_each_entry(pipe, &mdp5_data->pipes_used, list) {
-		if (pipe->type == MDSS_MDP_PIPE_TYPE_VIG)
-			goto check_cadence;
-	}
-	return;
+	/* another CPU could change  mdp5_data->yuv_frame_addr_reg while the ISR is running
+	use volatile to protect */
+	addr = ACCESS_ONCE(mdp5_data->yuv_frame_addr_reg);
+	if (!addr)
+		return;
 
-check_cadence:
 	/* vsync irqs can be generated after every vsync (e.g. when
 	 * SF DispSync resyncs) or only after a new video frame
 	 * is shown; handle both cases
@@ -686,7 +685,7 @@ check_cadence:
 	ctx = ctl->intf_ctx[MASTER_CTX];
 	frame_count = mdp_video_read(ctx, MDSS_MDP_REG_INTF_FRAME_COUNT);
 	frames = frame_count - prev_frame_count;
-	frame_addr = readl_relaxed(pipe->base + MDSS_MDP_REG_SSPP_SRC0_ADDR);
+	frame_addr = readl_relaxed(addr);
 
 	pr_debug("=== frame %08x count %u diff %u cadence %d\n",
 		 frame_addr, frame_count, frames, cadence);
@@ -1493,7 +1492,7 @@ static int mdss_mdp_video_intfs_setup(struct mdss_mdp_ctl *ctl,
 					(inum + MDSS_MDP_INTF0));
 			return -EBUSY;
 		}
-		pr_debug("video Intf #%d base=%p", ctx->intf_num, ctx->base);
+		pr_debug("video Intf #%d base=%pK", ctx->intf_num, ctx->base);
 		ctx->ref_cnt++;
 	} else {
 		pr_err("Invalid intf number: %d\n", (inum + MDSS_MDP_INTF0));
@@ -1523,7 +1522,7 @@ static int mdss_mdp_video_intfs_setup(struct mdss_mdp_ctl *ctl,
 					(inum + MDSS_MDP_INTF0));
 			return -EBUSY;
 		}
-		pr_debug("video Intf #%d base=%p", ctx->intf_num, ctx->base);
+		pr_debug("video Intf #%d base=%pK", ctx->intf_num, ctx->base);
 		ctx->ref_cnt++;
 
 		ctl->intf_ctx[SLAVE_CTX] = ctx;

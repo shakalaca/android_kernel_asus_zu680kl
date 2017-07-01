@@ -10,12 +10,18 @@
 #include "anx_ohio_private_interface.h"
 #include "anx_ohio_public_interface.h"
 #include <linux/power_supply.h>
+#include <linux/delay.h>
 
 extern struct power_supply *usb_psy;
 extern int asus_otg_boost_enable(int, bool);
 extern void notify_dual_role_change(void);
 extern int g_reverse_charger_mode;
 unsigned char old_vbus=0;
+
+#ifdef PD_CHARGING_DRIVER_SUPPORT
+extern bool asus_is_chg_high_temp(void);
+extern bool asus_is_low_battery(void);
+#endif
 
 /* init setting for TYPE_PWR_SRC_CAP */
 	static u32 init_src_caps[1] = {
@@ -703,15 +709,32 @@ void chip_register_init(void)
 		OhioWriteReg(AUTO_PD_MODE, OhioReadReg(AUTO_PD_MODE) | 0x04);
 	#ifdef AUTO_RDO_ENABLE
 	OhioWriteReg(AUTO_PD_MODE, OhioReadReg(AUTO_PD_MODE) | AUTO_PD_ENABLE);
-	/*Maximum Voltage in 100mV units*/
-	OhioWriteReg(MAX_VOLTAGE_SETTING, 0x32);  /* 5V */
-	/*Maximum Power in 500mW units*/ 
-	OhioWriteReg(MAX_POWER_SETTING, 0x0f);	 /* 7.5W */
-	/*Minimum Power in 500mW units*/
-	OhioWriteReg(MIN_POWER_SETTING, 0x002);  /* 1W */
+	if (asus_is_chg_high_temp()) {
+		//VBUS_5V;
+		/*Maximum Voltage in 100mV units*/
+		OhioWriteReg(MAX_VOLTAGE_SETTING, 0x32);  /* 5V */
+		/*Maximum Power in 500mW units*/
+		OhioWriteReg(MAX_POWER_SETTING, 0x0a);	 /* 5W */
+		/*Minimum Power in 500mW units*/
+		OhioWriteReg(MIN_POWER_SETTING, 0x002);  /* 2.5W */
+	} else if (asus_is_low_battery()) {
+		//VBUS_5V;
+		OhioWriteReg(MAX_VOLTAGE_SETTING, 0x32);  /* 5V */
+		/*Maximum Power in 500mW units*/
+		OhioWriteReg(MAX_POWER_SETTING, 0x1e);	 /* 15W */
+		/*Minimum Power in 500mW units*/
+		OhioWriteReg(MIN_POWER_SETTING, 0x005);  /* 2.5W */
+	} else {
+		//VBUS_9V;
+		/*Maximum Voltage in 100mV units*/
+		OhioWriteReg(MAX_VOLTAGE_SETTING, 0x5a);  /* 9V */
+		/*Maximum Power in 500mW units*/
+		OhioWriteReg(MAX_POWER_SETTING, 0x24);	 /* 18W */
+		/*Minimum Power in 500mW units*/
+		OhioWriteReg(MIN_POWER_SETTING, 0x002);  /* 2.5W */
+	}
 	#endif
 	OhioWriteReg(0x6b, OhioReadReg(0x6b)|0x0c);
-
 }
 
 inline void reciever_reset_queue(void)
@@ -752,6 +775,10 @@ void handle_intr_vector(void)
 			status = OhioReadReg(OHIO_SYSTEM_STSTUS);
 			pd_drole_change_default_func(status & DATA_ROLE);
 		}
+#ifdef AUTO_RDO_ENABLE
+		if ((~INTR_MASK_SETTING) & intr_vector & PD_GOT_POWER)
+			pd_got_rdo_max_value();
+#endif
 	}
 	clear_soft_interrupt();
 
@@ -979,10 +1006,9 @@ err_rcv_len:
 	} while (0)
 
 u8 sel_voltage_pdo_index = 0x02;
+extern struct completion prswap_completion;
 #ifdef PD_CHARGING_DRIVER_SUPPORT
 #define MAX_POWER 18000000
-extern bool asus_is_low_battery(void);
-extern bool asus_is_chg_high_temp(void);
 extern int asus_typec_DFP_type(enum typec_power_supply_type, int, int);
 extern void asus_smbchg_usbin_suspend(bool);
 extern struct work_struct pdwork;
@@ -991,7 +1017,6 @@ u8 pd_rdo_5v[PD_ONE_DATA_OBJECT_SIZE];
 u8 pdo_response;
 void usbpd_jump_voltage(void);
 extern struct completion rdo_completion;
-extern struct completion prswap_completion;
 struct power_data_object *pdo_cal;
 struct power_list {
 	u32 voltmv;
@@ -1480,6 +1505,29 @@ void pd_drole_change_default_func(bool on)
 	#endif
 }
 
+void pd_got_rdo_max_value()
+{
+	u32 maxV, maxW, maxA;
+
+	maxV = 100 * OhioReadReg(0xd3);
+	maxW = 500 * OhioReadReg(0xd4);
+	maxA = (maxW * 1000) / maxV;
+
+	if (maxV > 6000 && maxA > 2000)
+		maxA = 2000;
+	else if (maxV <= 6000 && maxA > 3000)
+		maxA = 3000;
+
+	if (maxV > 5000) {
+		asus_typec_DFP_type(TYPEC_PD_9V_CHARGER, maxV, maxA);
+	} else {
+		asus_typec_DFP_type(TYPEC_PD_5V_CHARGER, maxV, maxA);
+	}
+
+	pr_info("ohio maxV = %d\n", maxV);
+	pr_info("ohio maxW = %d\n", maxW);
+}
+
 /* Recieve comand response message's callback function.
   * it can be rewritten by customer just reimmplement this function,
   *  void *para : 
@@ -1505,9 +1553,11 @@ u8 recv_pd_cmd_rsp_default_callback(void *para, u8 para_len)
 			pr_info("pd_cmd RDO reques result is fail\n");
 		else
 			pr_info("pd_cmd RDO reques result is unknown\n");
+#ifndef AUTO_RDO_ENABLE
 #ifdef PD_CHARGING_DRIVER_SUPPORT
 		pdo_response = pd_response;
 		complete(&rdo_completion);
+#endif
 #endif
 		break;
 	case TYPE_VCONN_SWAP_REQ:
@@ -1617,6 +1667,7 @@ void init_pd_msg_callback(void)
 #ifdef PD_CHARGING_DRIVER_SUPPORT
 /*do jump*/
 void usbpd_jump_voltage(void) {
+#ifndef AUTO_RDO_ENABLE
 	u8 ret;
 	fit_rdo_value();
 	ret = interface_send_request();
@@ -1624,6 +1675,11 @@ void usbpd_jump_voltage(void) {
 		queue_work(system_nrt_wq, &pdwork);
 	else
 		pr_err("pd send request failed\n");
+#else
+	ohio_power_standby();
+	mdelay(1);
+	ohio_hardware_poweron();
+#endif
 }
 EXPORT_SYMBOL(usbpd_jump_voltage);
 #endif

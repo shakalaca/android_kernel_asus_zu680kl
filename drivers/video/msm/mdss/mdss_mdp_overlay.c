@@ -1124,6 +1124,12 @@ cursor_done:
 
 	pipe->params_changed++;
 skip_reconfigure:
+
+#ifdef CONFIG_PIXELWORKS_IRIS_SUPPORT
+	if (pipe->type == MDSS_MDP_PIPE_TYPE_VIG)
+		mdp5_data->yuv_frame_addr_reg = (pipe->base + MDSS_MDP_REG_SSPP_SRC0_ADDR);
+#endif
+
 	*ppipe = pipe;
 
 	mdss_mdp_pipe_unmap(pipe);
@@ -1233,7 +1239,7 @@ struct mdss_mdp_data *__mdp_overlay_buf_alloc(struct msm_fb_data_type *mfd,
 	list_move_tail(&buf->buf_list, &mdp5_data->bufs_used);
 	list_add_tail(&buf->pipe_list, &pipe->buf_queue);
 
-	pr_debug("buffer alloc: %p\n", buf);
+	pr_debug("buffer alloc: %pK\n", buf);
 
 	return buf;
 }
@@ -1286,7 +1292,7 @@ static void __mdp_overlay_buf_free(struct msm_fb_data_type *mfd,
 	buf->last_freed = local_clock();
 	buf->state = MDP_BUF_STATE_UNUSED;
 
-	pr_debug("buffer freed: %p\n", buf);
+	pr_debug("buffer freed: %pK\n", buf);
 
 	list_move_tail(&buf->buf_list, &mdp5_data->bufs_pool);
 }
@@ -1614,7 +1620,7 @@ static int __overlay_queue_pipes(struct msm_fb_data_type *mfd)
 		if (buf) {
 			switch (buf->state) {
 			case MDP_BUF_STATE_READY:
-				pr_debug("pnum=%d buf=%p first buffer ready\n",
+				pr_debug("pnum=%d buf=%pK first buffer ready\n",
 						pipe->num, buf);
 				break;
 			case MDP_BUF_STATE_ACTIVE:
@@ -1634,7 +1640,7 @@ static int __overlay_queue_pipes(struct msm_fb_data_type *mfd)
 				}
 				break;
 			default:
-				pr_err("invalid state of buf %p=%d\n",
+				pr_err("invalid state of buf %pK=%d\n",
 						buf, buf->state);
 				BUG();
 				break;
@@ -1970,12 +1976,6 @@ int mdss_mdp_overlay_kickoff(struct msm_fb_data_type *mfd,
 	int sd_in_pipe = 0;
 	bool need_cleanup = false;
 	struct mdss_mdp_commit_cb commit_cb;
-#ifdef CONFIG_PIXELWORKS_IRIS_SUPPORT
-	int used_vp = 0;
-	int used_gp = 0;
-	struct mdss_mdp_pipe *iris_vp;
-	struct mdss_mdp_pipe *iris_gp;
-#endif
 
 	if (!ctl)
 		return -ENODEV;
@@ -2020,20 +2020,8 @@ int mdss_mdp_overlay_kickoff(struct msm_fb_data_type *mfd,
 #ifdef CONFIG_PIXELWORKS_IRIS_SUPPORT
 	if (iris2_get_id() == 0x1) {
 		// iris
-		list_for_each_entry(pipe, &mdp5_data->pipes_used, list) {
-			if (pipe->type == MDSS_MDP_PIPE_TYPE_VIG) {
-				used_vp++;
-				iris_vp = pipe;
-			}
-			if (pipe->type == MDSS_MDP_PIPE_TYPE_RGB) {
-				used_gp++;
-				iris_gp = pipe;
-			}
-		}
-
 		if (mfd->panel_info->type == MIPI_VIDEO_PANEL && mfd->panel_info->is_prim_panel)
 			iris_mode_switch(mfd);
-		// iris
 	}
 #endif
 	/*
@@ -2134,6 +2122,16 @@ int mdss_mdp_overlay_kickoff(struct msm_fb_data_type *mfd,
 	if (IS_ERR_VALUE(ret))
 		goto commit_fail;
 
+	if (mdp5_data->ctl->is_video_mode) {
+		mutex_lock(&mdp5_data->ov_lock);
+		ret = mdss_mdp_display_commit_pp_post_vsync(mdp5_data->ctl,
+			NULL, NULL);
+		mutex_unlock(&mdp5_data->ov_lock);
+
+		if (IS_ERR_VALUE(ret))
+			goto commit_fail;
+	}
+
 	ret = mdss_mdp_ctl_update_fps(ctl);
 
 	mutex_lock(&mdp5_data->ov_lock);
@@ -2187,6 +2185,12 @@ int mdss_mdp_overlay_release(struct msm_fb_data_type *mfd, int ndx)
 
 			pipe->pid = 0;
 			destroy_pipe = pipe->play_cnt == 0;
+
+#ifdef CONFIG_PIXELWORKS_IRIS_SUPPORT
+			if (pipe->type == MDSS_MDP_PIPE_TYPE_VIG) {
+				mdp5_data->yuv_frame_addr_reg = NULL;
+			}
+#endif
 			if (!destroy_pipe)
 				list_move(&pipe->list,
 						&mdp5_data->pipes_cleanup);
@@ -4300,16 +4304,20 @@ static int __mdss_overlay_src_split_sort(struct msm_fb_data_type *mfd,
 		__overlay_swap_func);
 
 	for (i = 0; i < num_ovs; i++) {
+		if (ovs[i].z_order >= MDSS_MDP_MAX_STAGE) {
+			pr_err("invalid stage:%u\n", ovs[i].z_order);
+			return -EINVAL;
+		}
 		if (ovs[i].dst_rect.x < left_lm_w) {
 			if (left_lm_zo_cnt[ovs[i].z_order] == 2) {
-				pr_err("more than 2 ov @ stage%d on left lm\n",
+				pr_err("more than 2 ov @ stage%u on left lm\n",
 					ovs[i].z_order);
 				return -EINVAL;
 			}
 			left_lm_zo_cnt[ovs[i].z_order]++;
 		} else {
 			if (right_lm_zo_cnt[ovs[i].z_order] == 2) {
-				pr_err("more than 2 ov @ stage%d on right lm\n",
+				pr_err("more than 2 ov @ stage%u on right lm\n",
 					ovs[i].z_order);
 				return -EINVAL;
 			}

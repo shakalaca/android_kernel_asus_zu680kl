@@ -1,7 +1,10 @@
-
-config ELAN_FINGERPRINT_SPI
-	tristate "Elan fingerprint driver"
+menuconfig FINGERPRINT
+	bool "Fingerprint support"
+	help
+	  Say Y here to enable fingerprint class support. 
 
 config SYNA_FINGERPRINT_SPI
 	tristate "Synaptics fingerprint driver"
+	help
+	  This enables the support for synaptics fingerprint driver.
 

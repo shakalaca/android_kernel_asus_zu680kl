@@ -3977,6 +3977,15 @@ int mmc_power_restore_host(struct mmc_host *host)
 }
 EXPORT_SYMBOL(mmc_power_restore_host);
 
+int mmc_power_restore_broken_host(struct mmc_host *host)
+{
+	if (!host->bus_ops || host->bus_dead || !host->bus_ops->power_restore)
+		return -EINVAL;
+
+	return host->bus_ops->power_restore(host);
+}
+EXPORT_SYMBOL(mmc_power_restore_broken_host);
+
 int mmc_card_awake(struct mmc_host *host)
 {
 	int err = -ENOSYS;
@@ -4220,6 +4229,7 @@ int mmc_resume_host(struct mmc_host *host)
 		}
 	}
 	host->pm_flags &= ~MMC_PM_KEEP_POWER;
+	host->pm_flags &= ~MMC_PM_WAKE_SDIO_IRQ;
 	mmc_bus_put(host);
 
 	trace_mmc_resume_host(mmc_hostname(host), err,

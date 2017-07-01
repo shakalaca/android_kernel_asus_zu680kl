@@ -68,29 +68,30 @@ static struct completion SubSys_C_Complete;
 
 static struct mutex mA;
 #define AID_SDCARD_RW 1015
+
 static void acc_pwr_key_count(void)
 {
-	struct file *fp = NULL;
-	mm_segment_t oldfs;
-	char value[20];
-	loff_t pos = 0;
+        struct file *fp = NULL;
+        mm_segment_t oldfs;
+        char value[20];
+        loff_t pos = 0;
 
-	fp = filp_open("/asdf/pwk_count", O_RDWR|O_CREAT, 0664);
-	if (IS_ERR_OR_NULL(fp))
-		return;
+        fp = filp_open("/asdf/pwk_count", O_RDWR|O_CREAT, 0664);
+        if (IS_ERR_OR_NULL(fp))
+                return;
 
-	oldfs = get_fs();
-	set_fs(KERNEL_DS);
+        oldfs = get_fs();
+        set_fs(KERNEL_DS);
 
-	if (vfs_read(fp, value, strlen(value), &pos) >= 0) {
-		sprintf(value, "%ld", simple_strtol(value, NULL, 10) + 1);
-		pos = 0;
-		vfs_write(fp, value, strlen(value), &pos);
-	}
+        if (vfs_read(fp, value, strlen(value), &pos) >= 0) {
+                sprintf(value, "%ld", simple_strtol(value, NULL, 10) + 1);
+                pos = 0;
+                vfs_write(fp, value, strlen(value), &pos);
+        }
 
-	set_fs(oldfs);
-	vfs_fsync(fp, 0);
-	filp_close(fp, NULL);
+        set_fs(oldfs);
+        vfs_fsync(fp, 0);
+        filp_close(fp, NULL);
 }
 
 static void do_write_event_worker(struct work_struct *work)
@@ -113,31 +114,32 @@ static void do_write_event_worker(struct work_struct *work)
 		}
 
 		if (!strcmp(evtlog_bootup_reason, "panic")) {
-			sprintf(buffer, "[Reboot] Kernel panic\n");
-			sys_write(g_hfileEvtlog, buffer, strlen(buffer));
-			memset(buffer, 0, sizeof(char)*256);
-		} else if (!strcmp(evtlog_bootup_reason, "watchdog")) {
+                        sprintf(buffer, "[Reboot] Kernel panic\n");
+                        sys_write(g_hfileEvtlog, buffer, strlen(buffer));
+                        memset(buffer, 0, sizeof(char)*256);
+                } else if (!strcmp(evtlog_bootup_reason, "watchdog")) {
                         sprintf(buffer, "[Reboot] Watchdog reset\n");
                         sys_write(g_hfileEvtlog, buffer, strlen(buffer));
                         memset(buffer, 0, sizeof(char)*256);
                 }
 
-                if (bootup < 0) {
-			if (ASUSEvt_poweroff_reason < 0)
-				strcpy(evtlog_poweroff_reason, "[Power lost][Unknown]");
-			else
-				strcpy(evtlog_poweroff_reason, ASUSEvt_poweroff_reason_str[ASUSEvt_poweroff_reason]);
+		if (bootup < 0) {
+                        if (ASUSEvt_poweroff_reason < 0)
+                                strcpy(evtlog_poweroff_reason, "[Power lost][Unknown]");
+                        else
+                                strcpy(evtlog_poweroff_reason, ASUSEvt_poweroff_reason_str[ASUSEvt_poweroff_reason]);
 
-			if ((ASUSEvt_poweroff_reason == 7 || ASUSEvt_poweroff_reason == 15)
-				&& strcmp(evtlog_bootup_reason, "panic")
-				&& strcmp(evtlog_bootup_reason, "watchdog"))
-				acc_pwr_key_count();
+                        if (!strcmp(evtlog_bootup_reason, "power-key-restart") ||
+				((ASUSEvt_poweroff_reason == 7 || ASUSEvt_poweroff_reason == 15)
+                                && strcmp(evtlog_bootup_reason, "panic")
+                                && strcmp(evtlog_bootup_reason, "watchdog")))
+                                acc_pwr_key_count();
 
-			sprintf(buffer, "\n\n---------------System Boot----%s---------\n"
-				"[Shutdown] Power off Reason: 0x%x => %s; (last time) ###### \n"
-				"###### Bootup Reason: %s ######\n",
+                        sprintf(buffer, "\n\n---------------System Boot----%s---------\n"
+				"--------------- Power off  : 0x%x => %s; (last time) : ---------------\n"
+                                "###### Bootup Reason: %s ######\n",
                                 ASUS_SW_VER, (ASUSEvt_poweroff_reason < 0) ? 0 : 1 << ASUSEvt_poweroff_reason
-				, evtlog_poweroff_reason, evtlog_bootup_reason);
+                                , evtlog_poweroff_reason, evtlog_bootup_reason);
                 }
 
 		bootup = sys_write(g_hfileEvtlog, buffer, strlen(buffer));
@@ -252,8 +254,28 @@ static void do_count_subsys_worker(struct work_struct *work)
 	int  index = 0;
 	char keys[] = "[SSR]:";
 	char *pch;
-	char SubSysName[SUBSYS_NUM][10] = { "modem", "wcnss", "adsp", "venus" };
-	int  Counts[SUBSYS_NUM] = { 0 };/* MODEM, WCNSS, ADSP, OTHERS(VENUS) */
+	char n_buf[64];
+	char SubSysName[SUBSYS_NUM_MAX][10];
+	int  Counts[SUBSYS_NUM_MAX] = { 0 };
+	int  subsys_num = 0;
+	char OutSubSysName[3][10] = { "modem", "wcnss", "adsp" };/* Confirm SubSys Name for Each Platform */
+	int  OutCounts[4] = { 0 };/* MODEM, WIFI, ADSP, OTHERS */
+
+	/* Search All SubSys Supported */
+	for(index = 0 ; index < SUBSYS_NUM_MAX ; index++) {
+		sprintf(n_buf, SUBSYS_BUS_ROOT"/subsys%d/name", index);
+		hfile = sys_open(n_buf, O_RDONLY|O_SYNC, 0444);
+		if(!IS_ERR((const void *)(ulong)hfile)) {
+			memset(r_buf, 0, sizeof(r_buf));
+			r_size = sys_read(hfile, r_buf, sizeof(r_buf));
+			if (r_size > 0) {
+				sprintf(SubSysName[index], r_buf, r_size-2);/* Skip \n\0 */
+				SubSysName[index][r_size-1] = '\0';/* Insert \0 at last */
+				subsys_num++;
+			}
+			sys_close(hfile);
+		}
+	}
 
 	hfile = sys_open(SUBSYS_HEALTH_MEDICAL_TABLE_PATH".txt", O_CREAT|O_RDONLY|O_SYNC, 0444);
 	if(!IS_ERR((const void *)(ulong)hfile)) {
@@ -265,7 +287,7 @@ static void do_count_subsys_worker(struct work_struct *work)
 				pch = strstr(r_buf, keys);
 				while (pch != NULL) {
 					pch = pch + strlen(keys);
-					for (index = 0 ; index < SUBSYS_NUM ; index++) {
+					for (index = 0 ; index < subsys_num ; index++) {
 						if (!strncmp(pch, SubSysName[index], strlen(SubSysName[index]))) {
 							Counts[index]++;
 							break;
@@ -289,7 +311,7 @@ static void do_count_subsys_worker(struct work_struct *work)
 				pch = strstr(r_buf, keys);
 				while (pch != NULL) {
 					pch = pch + strlen(keys);
-					for (index = 0 ; index < SUBSYS_NUM ; index++) {
+					for (index = 0 ; index < subsys_num ; index++) {
 						if (!strncmp(pch, SubSysName[index], strlen(SubSysName[index]))) {
 							Counts[index]++;
 							break;
@@ -303,6 +325,19 @@ static void do_count_subsys_worker(struct work_struct *work)
 		sys_close(hfile);
 	}
 
+	/* Map The Out Pattern */
+	for(index = 0 ; index < subsys_num ; index++) {
+		if (!strncmp(OutSubSysName[0], SubSysName[index], strlen(SubSysName[index]))) {
+			OutCounts[0] += Counts[index]; /* MODEM */
+		} else if (!strncmp(OutSubSysName[1], SubSysName[index], strlen(SubSysName[index]))) {
+			OutCounts[1] += Counts[index]; /* WIFI */
+		} else if (!strncmp(OutSubSysName[2], SubSysName[index], strlen(SubSysName[index]))) {
+			OutCounts[2] += Counts[index]; /* ADSP */
+		} else {
+			OutCounts[3] += Counts[index]; /* OTHERS */
+		}
+	}
+
         hfile = sys_open("/asdf/reboot_count", O_RDONLY|O_SYNC, 0);
         memset(r_buf, 0, sizeof(r_buf));
         if (!IS_ERR((const void *)(ulong)hfile)) {
@@ -313,15 +348,15 @@ static void do_count_subsys_worker(struct work_struct *work)
         }
 
 	hfile = sys_open("/asdf/pwk_count", O_RDONLY|O_SYNC, 0);
-	memset(r_buf2, 0, sizeof(r_buf2));
-	if(!IS_ERR((const void *)(ulong)hfile)) {
-		sys_read(hfile, r_buf2, sizeof(r_buf2));
-		sys_close(hfile);
-	} else {
-		strcpy(r_buf2, "0");
-	}
+        memset(r_buf2, 0, sizeof(r_buf2));
+        if(!IS_ERR((const void *)(ulong)hfile)) {
+                sys_read(hfile, r_buf2, sizeof(r_buf2));
+                sys_close(hfile);
+        } else {
+                strcpy(r_buf2, "0");
+        }
 
-	sprintf(g_SubSys_C_Buf, "%s-%d-%d-%d-%d-%s", r_buf, Counts[0], Counts[1], Counts[2], Counts[3], r_buf2);/* MODEM, WCNSS, ADSP, OTHERS(VENUS), LONG PRESS PWK */
+        sprintf(g_SubSys_C_Buf, "%s-%d-%d-%d-%d-%s", r_buf, OutCounts[0], OutCounts[1], OutCounts[2], OutCounts[3], r_buf2);/* MODEM, WIFI, ADSP, OTHERS, LONG PRESS PWK */
 	complete(&SubSys_C_Complete);
 }
 
@@ -434,55 +469,6 @@ static ssize_t asusevtlog_write(struct file *file, const char __user *buf, size_
 	return count;
 }
 
-
-
-/*
-	ret value:
-		0: lock
-		1: unlock
-*/
-static int gJBStatus = 3;
-static int JBStatus_proc_show(struct seq_file *m, void *v)
-{
-	seq_printf(m, "%d\n", gJBStatus);
-	return 0;
-}
-
-static int JBStatus_proc_open(struct inode *inode, struct  file *file)
-{
-	return single_open(file, JBStatus_proc_show, NULL);
-}
-
-static ssize_t JBStatus_proc_write(struct file *file, const char __user *buf, size_t count, loff_t *ppos)
-{
-	char num[10];
-	memset(num, 0, sizeof(num));
-
-	/* no data be written */
-	if (!count) {
-		return 0;
-	}
-
-	/* Input size is too large to write our buffer(num) */
-	if (count > (sizeof(num) - 1)) {
-		return -EINVAL;
-	}
-
-	if (copy_from_user(num, buf, count)) {
-		return -EFAULT;
-	}
-
-	if (strncmp(num, "0", 1) == 0) {
-		gJBStatus = 0;
-	} else if (strncmp(num, "1", 1) == 0) {
-		gJBStatus = 1;
-	} else {
-		printk("JBStatus unknown data!!\n");
-	}
-
-	return count;
-}
-
 static int asusdebug_open(struct inode *inode, struct file *file)
 {
 	return 0;
@@ -524,15 +510,10 @@ static const struct file_operations proc_asusevtlog_operations = {
 	.write	  = asusevtlog_write,
 };
 static const struct file_operations proc_asusdebug_operations = {
-	.read	   = asusdebug_read,
+	.read	  = asusdebug_read,
 	.write	  = asusdebug_write,
-	.open	   = asusdebug_open,
-	.release	= asusdebug_release,
-};
-static const struct file_operations proc_JBStatus_operations = {
-	.open = JBStatus_proc_open,
-	.read = seq_read,
-	.write = JBStatus_proc_write,
+	.open	  = asusdebug_open,
+	.release  = asusdebug_release,
 };
 
 static int __init proc_asusdebug_init(void)
@@ -541,7 +522,6 @@ static int __init proc_asusdebug_init(void)
 	proc_create("asusdebug", S_IALLUGO, NULL, &proc_asusdebug_operations);
 	proc_create("asusevtlog", S_IRWXUGO, NULL, &proc_asusevtlog_operations);
 	proc_create("asusevtlog-switch", S_IRWXUGO, NULL, &proc_evtlogswitch_operations);
-	proc_create("JBStatus", S_IRUGO | S_IWUSR, NULL, &proc_JBStatus_operations);
 	mutex_init(&mA);
 
 	/*ASUS-BBSP SubSys Health Record+++*/

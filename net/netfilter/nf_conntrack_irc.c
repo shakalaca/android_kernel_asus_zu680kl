@@ -152,17 +152,17 @@ static bool mangle_ip(struct nf_conn *ct,
 		nick_end++;
 
 	list_for_each_safe(obj_ptr, prev_obj_ptr,
-			   &client_list.ptr) {
-		temp = list_entry(obj_ptr,
-				  struct irc_client_info, ptr);
-		/*If it is an internal client,
-		*do not mangle the DCC Server IP
-		*/
-		if ((temp->server_ip == tuple->dst.u3.ip) &&
-		    (temp->nickname_len == (nick_end - nick_start))) {
+					   &client_list.ptr) {
+	temp = list_entry(obj_ptr,
+		struct irc_client_info, ptr);
+	/*If it is an internal client,
+	 *do not mangle the DCC Server IP
+	 */
+	if ((temp->server_ip == tuple->dst.u3.ip) &&
+		(temp->nickname_len == nick_end - nick_start)) {
 			if (memcmp(nick_start, temp->nickname,
-				   temp->nickname_len) == 0)
-				return false;
+				temp->nickname_len) == 0)
+					return false;
 		}
 	}
 
@@ -202,8 +202,8 @@ static int handle_nickname(struct nf_conn *ct,
 				kmalloc(i, GFP_ATOMIC);
 			if (temp->nickname) {
 				temp->nickname_len = i;
-				memcpy(temp->nickname,
-				       nick_start, temp->nickname_len);
+				memcpy(&temp->nickname,
+					   nick_start, temp->nickname_len);
 			} else {
 				list_del(&temp->ptr);
 				no_of_clients--;

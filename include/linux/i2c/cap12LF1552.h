@@ -91,7 +91,7 @@ static int cap12LF1552_suspend(struct device *);
 static int cap12LF1552_resume(struct device *);
 
 #ifdef CONFIG_PM
-static const struct dev_pm_ops cap1106_pm_ops = {
+static const struct dev_pm_ops cap12LF1552_pm_ops = {
 #ifndef CONFIG_FB
     .suspend = cap12LF1552_suspend,
     .resume  = cap12LF1552_resume,

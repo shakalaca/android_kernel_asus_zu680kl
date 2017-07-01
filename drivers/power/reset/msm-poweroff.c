@@ -44,6 +44,7 @@
 #define SCM_EDLOAD_MODE			0X01
 #define SCM_DLOAD_CMD			0x10
 
+extern void asus_force_shipping_mode(void);
 
 static int restart_mode;
 void *restart_reason;
@@ -56,8 +57,6 @@ static phys_addr_t tcsr_boot_misc_detect;
 #ifdef CONFIG_MSM_DLOAD_MODE
 #define EDL_MODE_PROP "qcom,msm-imem-emergency_download_mode"
 #define DL_MODE_PROP "qcom,msm-imem-download_mode"
-
-extern void asus_force_shipping_mode(void);
 
 static int in_panic;
 static void *dload_mode_addr;
@@ -259,7 +258,11 @@ static void msm_restart_prepare(const char *cmd)
 			strcmp(cmd, "recovery") &&
 			strcmp(cmd, "bootloader") &&
 			strcmp(cmd, "oem-01") &&
-			strcmp(cmd, "rtc")))
+			strcmp(cmd, "powerkey") &&
+			strcmp(cmd, "rtc") &&
+			strcmp(cmd, "dm-verity device corrupted") &&
+			strcmp(cmd, "dm-verity enforcing") &&
+			strcmp(cmd, "keys clear")))
 			need_warm_reset = true;
 	} else {
 		need_warm_reset = (in_panic || get_dload_mode() ||
@@ -267,10 +270,10 @@ static void msm_restart_prepare(const char *cmd)
 	}
 
 	if (cmd != NULL && (!strcmp(cmd, "shutdown") || !strcmp(cmd, "EnterShippingMode"))) {
-		pr_notice("Powering off the SoC. force enter shipping mode\n");
-		asus_force_shipping_mode();
+                pr_notice("Powering off the SoC. force enter shipping mode\n");
+                asus_force_shipping_mode();
                 mdelay(10000);
-	}
+        }
 
 	/* Hard reset the PMIC unless memory contents must be maintained. */
 	if (need_warm_reset) {
@@ -290,10 +293,18 @@ static void msm_restart_prepare(const char *cmd)
 			__raw_writel(0x77665502, restart_reason);
 		} else if (!strncmp(cmd, "oem-01", 6)) {
 			__raw_writel(0x77665577, restart_reason);
+		} else if (!strncmp(cmd, "powerkey", 8)) {
+			__raw_writel(0x77665566, restart_reason);
 		} else if (!strcmp(cmd, "rtc")) {
 			qpnp_pon_set_restart_reason(
 				PON_RESTART_REASON_RTC);
 			__raw_writel(0x77665503, restart_reason);
+		} else if (!strcmp(cmd, "dm-verity device corrupted")) {
+			__raw_writel(0x77665508, restart_reason);
+		} else if (!strcmp(cmd, "dm-verity enforcing")) {
+			__raw_writel(0x77665509, restart_reason);
+		} else if (!strcmp(cmd, "keys clear")) {
+			__raw_writel(0x7766550a, restart_reason);
 		} else if (!strncmp(cmd, "oem-", 4)) {
 			unsigned long code;
 			int ret;
@@ -309,9 +320,9 @@ static void msm_restart_prepare(const char *cmd)
 	}
 
 	if (in_panic) {
-		__raw_writel(0x77665507, restart_reason);
-		ASUSEvtlog("[Reboot] Kernel panic\n");
-	}
+                __raw_writel(0x77665507, restart_reason);
+                ASUSEvtlog("[Reboot] Kernel panic\n");
+        }
 
 	flush_cache_all();
 

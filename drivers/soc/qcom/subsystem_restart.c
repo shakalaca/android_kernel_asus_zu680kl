@@ -53,7 +53,7 @@ module_param(enable_debug, int, S_IRUGO | S_IWUSR);
 #define SHUTDOWN_ACK_MAX_LOOPS	100
 #define SHUTDOWN_ACK_DELAY_MS	100
 
-#include "linux/asusdebug.h"/*ASUS-BBSP Save SSR reason+*/
+#include "linux/asusdebug.h"/*ASUS-BBSP Save SSR reason - Add SSR inform to ASUSEvtLog+*/
 
 /**
  * enum p_subsys_state - state of a subsystem (private)
@@ -274,6 +274,13 @@ static ssize_t system_debug_store(struct device *dev,
 	return count;
 }
 
+/*ASUS-BBSP Modify for saving ramdump - devpath+++*/
+static ssize_t devpath_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	return snprintf(buf, PAGE_SIZE, "%s\n", kobject_get_path(&(to_subsys(dev)->desc->dev->kobj), GFP_KERNEL));
+}
+/*ASUS-BBSP Modify for saving ramdump - devpath---*/
+
 static ssize_t
 firmware_name_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
@@ -300,13 +307,6 @@ static ssize_t firmware_name_store(struct device *dev,
 	mutex_unlock(&track->lock);
 	return count;
 }
-
-/*ASUS-BBSP Modify for saving ramdump - devpath+++*/
-static ssize_t devpath_show(struct device *dev, struct device_attribute *attr, char *buf)
-{
-	return snprintf(buf, PAGE_SIZE, "%s\n", kobject_get_path(&(to_subsys(dev)->desc->dev->kobj), GFP_KERNEL));
-}
-/*ASUS-BBSP Modify for saving ramdump - devpath---*/
 
 int subsys_get_restart_level(struct subsys_device *dev)
 {
@@ -392,8 +392,8 @@ void subsys_save_reason(char *name, char *reason)
 /*ASUS-BBSP Skip ramdump or panic in a specific reason---*/
 
 	strlcpy(ssr_reason, reason, MAX_SSR_REASON_LEN);
-	ASUSEvtlog("[SSR]:%s %s\n", name, reason);/*ASUS-BBSP Add SSR inform to ASUSEvtLog+*/
-	SubSysHealthRecord("[SSR]:%s %s\n", name, reason);/*ASUS-BBSP Add SSR inform to SubSysHealthRecord+*/
+	ASUSEvtlog("[SSR]:%s %s\n", name, reason);/*ASUS-BBSP Save SSR reason - Add SSR inform to ASUSEvtLog+*/
+	SubSysHealthRecord("[SSR]:%s %s\n", name, reason);/*ASUS-BBSP Save SSR reason - Add SSR inform to SubSysHealthRecord+*/
 }
 /*ASUS-BBSP Save SSR reason---*/
 
@@ -1804,10 +1804,10 @@ static int __init subsys_restart_init(void)
 
 	ssr_reason = kzalloc(sizeof(char) * MAX_SSR_REASON_LEN, GFP_KERNEL);/*ASUS-BBSP Save SSR reason+*/
 
-/*ASUS-BBSP Skip ramdump or panic in a specific reason+++*/
+	/*ASUS-BBSP Skip ramdump or panic in a specific reason+++*/
 	ssr_panic = kzalloc(sizeof(char) * MAX_SSR_REASON_LEN, GFP_KERNEL);
 	ssr_no_dump = kzalloc(sizeof(char) * MAX_SSR_REASON_LEN, GFP_KERNEL);
-/*ASUS-BBSP Skip ramdump or panic in a specific reason---*/
+	/*ASUS-BBSP Skip ramdump or panic in a specific reason---*/
 
 	return 0;
 

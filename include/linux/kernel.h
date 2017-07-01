@@ -57,15 +57,21 @@
 #ifdef CONFIG_PCBID_FLAG
 enum DEVICE_HWID
 {
-	HW_REV_INVALID = -1,
-	HW_REV_SR = 0
+       HW_REV_INVALID = -1,
+       HW_REV_SR = 0,
+       HW_REV_ER1,
+       HW_REV_ER2,
+       HW_REV_ER3,
+       HW_REV_PR1,
+       HW_REV_PR2MP1,
+       HW_REV_MP2
 };
 extern enum DEVICE_HWID g_ASUS_hwID;
 
 enum DEVICE_PROJID
 {
-	PROJECT_INVALID = -1,
-	PROJECT_ZU681KL = 0
+       PROJECT_INVALID = -1,
+       PROJECT_MERCURY = 0
 };
 extern enum DEVICE_PROJID g_ASUS_projID;
 #endif

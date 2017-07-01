@@ -146,6 +146,7 @@ struct smbchg_chip {
 	bool				hvdcp3_supported;
 	bool				allow_hvdcp3_detection;
 	bool				restricted_charging;
+	bool				cfg_override_usb_current;
 	u8				original_usbin_allowance;
 	struct parallel_usb_cfg		parallel;
 	struct delayed_work		parallel_en_work;
@@ -307,7 +308,9 @@ static struct workqueue_struct *smbchg_wq;
 static int asus_force_usb_suspend = 0;
 static char* ASUS_CHG_TYPE;
 extern int qpnp_pon_system_pwr_off(enum pon_power_off_type type);
+#ifdef PD_CHARGING_DRIVER_SUPPORT
 extern void asus_phy_chg_detect(void);
+#endif
 extern void asus_Dual_Disable(void);
 extern void asus_Dual_Enable(int, int);
 extern void asus_smb1351_initial_setting(void);
@@ -1744,6 +1747,35 @@ static int smbchg_set_usb_current_max(struct smbchg_chip *chip,
 				(chip->wa_flags & SMBCHG_USB100_WA))
 			current_ma = CURRENT_150_MA;
 
+		/* handle special SDP case when USB reports high current */
+/*		if (current_ma > CURRENT_900_MA) {
+			if (chip->cfg_override_usb_current) {*/
+				/*
+				 * allow setting the current value as reported
+				 * by USB driver.
+				 */
+/*				rc = smbchg_set_high_usb_chg_current(chip,
+							current_ma);
+				if (rc < 0) {
+					pr_err("Couldn't set %dmA rc = %d\n",
+							current_ma, rc);
+					goto out;
+				}
+				rc = smbchg_masked_write(chip,
+					chip->usb_chgpth_base + CMD_IL,
+					ICL_OVERRIDE_BIT, ICL_OVERRIDE_BIT);
+				if (rc < 0)
+					pr_err("Couldn't set ICL override rc = %d\n",
+							rc);
+			} else {*/
+				/* default to 500mA */
+/*				current_ma = CURRENT_500_MA;
+			}
+			pr_smb(PR_STATUS,
+				"override_usb_current=%d current_ma set to %d\n",
+				chip->cfg_override_usb_current, current_ma);
+		}*/
+
 		if (current_ma < CURRENT_150_MA) {
 			/* force 100mA */
 			rc = smbchg_sec_masked_write(chip,
@@ -1945,6 +1977,16 @@ static bool smbchg_is_usbin_active_pwr_src(struct smbchg_chip *chip)
 		&& (reg & USBIN_ACTIVE_PWR_SRC_BIT);
 }
 
+static void smbchg_detect_parallel_charger(struct smbchg_chip *chip)
+{
+	struct power_supply *parallel_psy = get_parallel_psy(chip);
+
+	if (parallel_psy)
+		chip->parallel_charger_detected =
+			power_supply_set_present(parallel_psy, true) ?
+								false : true;
+}
+
 static int smbchg_parallel_usb_charging_en(struct smbchg_chip *chip, bool en)
 {
 	struct power_supply *parallel_psy = get_parallel_psy(chip);
@@ -2066,7 +2108,8 @@ static void smbchg_parallel_usb_taper(struct smbchg_chip *chip)
 	int parallel_fcc_ma, tries = 0;
 	u8 reg = 0;
 
-	if (!parallel_psy || !chip->parallel_charger_detected)
+	smbchg_detect_parallel_charger(chip);
+	if (!chip->parallel_charger_detected)
 		return;
 
 	smbchg_stay_awake(chip, PM_PARALLEL_TAPER);
@@ -4830,6 +4873,7 @@ static void restore_from_hvdcp_detection(struct smbchg_chip *chip)
 				HVDCP_EN_BIT, HVDCP_EN_BIT);
 	if (rc < 0)
 		pr_err("Couldn't enable HVDCP rc=%d\n", rc);
+
 	/* enable APSD */
 	rc = smbchg_sec_masked_write(chip,
 				chip->usb_chgpth_base + APSD_CFG,
@@ -4927,6 +4971,8 @@ static void handle_usb_removal(struct smbchg_chip *chip)
 	/* Clear the OV detected status set before */
 	if (chip->usb_ov_det)
 		chip->usb_ov_det = false;
+	/* cancel/wait for hvdcp pending work if any */
+	cancel_delayed_work_sync(&chip->hvdcp_det_work);
 	smbchg_change_usb_supply_type(chip, POWER_SUPPLY_TYPE_UNKNOWN);
 	if (!chip->skip_usb_notification) {
 		pr_smb(PR_MISC, "setting usb psy present = %d\n",
@@ -5171,7 +5217,6 @@ EXPORT_SYMBOL(asus_otg_boost_enable);
 #define HVDCP_NOTIFY_MS		2500
 static void handle_usb_insertion(struct smbchg_chip *chip)
 {
-	struct power_supply *parallel_psy = get_parallel_psy(chip);
 	enum power_supply_type usb_supply_type;
 	int rc;
 	char *usb_type_name = "null";
@@ -5207,8 +5252,10 @@ static void handle_usb_insertion(struct smbchg_chip *chip)
 		"inserted type = %d (%s)", usb_supply_type, usb_type_name);
 	chip->asus_cable_online = true;
 	smbchg_aicl_deglitch_wa_check(chip);
+#ifdef PD_CHARGING_DRIVER_SUPPORT
 	if (!strcmp(usb_type_name, "OTHER"))
 		asus_phy_chg_detect();
+#endif
 	smbchg_change_usb_supply_type(chip, usb_supply_type);
 	if (!chip->skip_usb_notification) {
 		pr_smb(PR_MISC, "setting usb psy present = %d\n",
@@ -5243,12 +5290,7 @@ static void handle_usb_insertion(struct smbchg_chip *chip)
 	} else
 		queue_delayed_work(smbchg_wq, &chip->asus_bc_1_2_det_work, msecs_to_jiffies(500));
 
-	if (parallel_psy) {
-		rc = power_supply_set_present(parallel_psy, true);
-		chip->parallel_charger_detected = rc ? false : true;
-		if (rc)
-			pr_debug("parallel-charger absent rc=%d\n", rc);
-	}
+	smbchg_detect_parallel_charger(chip);
 
 	if (chip->parallel.avail && chip->aicl_done_irq
 			&& !chip->enable_aicl_wake) {
@@ -5633,6 +5675,8 @@ static int smbchg_prepare_for_pulsing(struct smbchg_chip *chip)
 		goto handle_removal;
 	}
 
+	set_usb_psy_dp_dm(chip, POWER_SUPPLY_DP_DM_DP0P6_DMF);
+
 	/* disable APSD */
 	pr_smb(PR_MISC, "Disabling APSD\n");
 	rc = smbchg_sec_masked_write(chip,
@@ -5656,7 +5700,6 @@ static int smbchg_prepare_for_pulsing(struct smbchg_chip *chip)
 	smbchg_sec_masked_write(chip, chip->usb_chgpth_base + USB_AICL_CFG,
 			AICL_EN_BIT, AICL_EN_BIT);
 
-	set_usb_psy_dp_dm(chip, POWER_SUPPLY_DP_DM_DP0P6_DMF);
 	/*
 	 * DCP will switch to HVDCP in this time by removing the short
 	 * between DP DM
@@ -5719,6 +5762,7 @@ static int smbchg_unprepare_for_pulsing(struct smbchg_chip *chip)
 		pr_err("Couldn't enable HVDCP rc=%d\n", rc);
 		return rc;
 	}
+
 	/* enable APSD */
 	pr_smb(PR_MISC, "Enabling APSD\n");
 	rc = smbchg_sec_masked_write(chip,
@@ -5877,6 +5921,13 @@ static int smbchg_prepare_for_pulsing_lite(struct smbchg_chip *chip)
 {
 	int rc = 0;
 
+	pr_smb(PR_MISC, "HVDCP voting for 300mA ICL\n");
+	rc = vote(chip->usb_icl_votable, HVDCP_ICL_VOTER, true, 300);
+	if (rc < 0) {
+		pr_err("Couldn't vote for 300mA HVDCP ICL rc=%d\n", rc);
+		return rc;
+	}
+
 	/* check if HVDCP is already in 5V continuous mode */
 	if (is_hvdcp_5v_cont_mode(chip)) {
 		pr_smb(PR_MISC, "HVDCP by default is in 5V continuous mode\n");
@@ -5900,13 +5951,6 @@ static int smbchg_prepare_for_pulsing_lite(struct smbchg_chip *chip)
 	 */
 	if (!is_src_detect_high(chip)) {
 		pr_smb(PR_MISC, "src det low after 500mS sleep\n");
-		goto out;
-	}
-
-	pr_smb(PR_MISC, "HVDCP voting for 300mA ICL\n");
-	rc = vote(chip->usb_icl_votable, HVDCP_ICL_VOTER, true, 300);
-	if (rc < 0) {
-		pr_err("Couldn't vote for 300mA HVDCP ICL rc=%d\n", rc);
 		goto out;
 	}
 
@@ -5955,6 +5999,10 @@ static int smbchg_prepare_for_pulsing_lite(struct smbchg_chip *chip)
 out:
 	chip->hvdcp_3_det_ignore_uv = false;
 	restore_from_hvdcp_detection(chip);
+	if (!is_src_detect_high(chip)) {
+		pr_smb(PR_MISC, "HVDCP removed - force removal\n");
+		update_usb_status(chip, 0, true);
+	}
 	return rc;
 }
 
@@ -6628,6 +6676,7 @@ static irqreturn_t fastchg_handler(int irq, void *_chip)
 	struct smbchg_chip *chip = _chip;
 
 	pr_smb(PR_INTERRUPT, "p2f triggered\n");
+	smbchg_detect_parallel_charger(chip);
 	smbchg_parallel_usb_check_ok(chip);
 	if (chip->psy_registered)
 		power_supply_changed(&chip->batt_psy);
@@ -6840,7 +6889,8 @@ static irqreturn_t usbin_uv_handler(int irq, void *_chip)
 	 * set usb_psy's dp=f dm=f if this is a new insertion, i.e. it is
 	 * not already src_detected and usbin_uv is seen falling
 	 */
-	if (!(reg & USBIN_UV_BIT) && !(reg & USBIN_SRC_DET_BIT)) {
+	if (!(reg & USBIN_UV_BIT) && !(reg & USBIN_SRC_DET_BIT) &&
+		!chip->hvdcp_3_det_ignore_uv) {
 		pr_smb(PR_MISC, "setting usb psy dp=f dm=f\n");
 		power_supply_set_dp_dm(chip->usb_psy,
 				POWER_SUPPLY_DP_DM_DPF_DMF);
@@ -7125,6 +7175,7 @@ static inline int get_bpd(const char *name)
 #define DIG_MAJOR			1
 #define ANA_MINOR			2
 #define ANA_MAJOR			3
+#define CHGR_CFG1			0xFB
 #define RECHG_THRESHOLD_SRC_BIT		BIT(1)
 #define TERM_I_SRC_BIT			BIT(2)
 #define TERM_SRC_FG			BIT(2)
@@ -7135,7 +7186,9 @@ static inline int get_bpd(const char *name)
 #define CHG_INHIBIT_300MV_VAL		0x03
 #define CHG_INHIBIT_MASK		0x03
 #define USE_REGISTER_FOR_CURRENT	BIT(2)
+#define CHGR_CFG2			0xFC
 #define CHG_EN_SRC_BIT			BIT(7)
+#define CHG_EN_POLARITY_BIT		BIT(6)
 #define P2F_CHG_TRAN			BIT(5)
 #define CHG_BAT_OV_ECC			BIT(4)
 #define I_TERM_BIT			BIT(3)
@@ -8861,7 +8914,10 @@ static void asus_thermal_policy_level2(struct smbchg_chip *chip)
 	chip->asus_thermal_policy_flag = asus_thermal_level2;
 	asus_Dual_Disable();
 	if (chip->usb_supply_type == POWER_SUPPLY_TYPE_USB
-			&& chip->asus_typec_chg == TYPEC_UNKNOWN_CHARGER)
+#ifdef PD_CHARGING_DRIVER_SUPPORT
+			&& chip->asus_typec_chg == TYPEC_UNKNOWN_CHARGER
+#endif
+		)
 			asus_set_high_usb_chg_current(chip, 500);
 	else {
 		if (batt_cap >= 15)
@@ -8981,8 +9037,19 @@ static void asus_thermal_policy(struct smbchg_chip *chip) {
 	queue_delayed_work(smbchg_wq, &chip->asus_thermal_policy_work, msecs_to_jiffies(10500));
 }
 
+static int asus_get_prop_batt_FCC(struct smbchg_chip *chip)
+{
+	int FCC, rc;
+	rc = get_property_from_fg(chip, POWER_SUPPLY_PROP_CHARGE_FULL, &FCC);
+	if (rc) {
+		pr_err("Couldn't get POWER_SUPPLY_PROP_CHARGE_FULL\n");
+		return 4490;
+	}
+	return FCC/1000;
+}
+
 static void asus_JEITA_rule(struct smbchg_chip *chip) {
-	int rc, batt_temp, batt_volt, batt_cap;
+	int rc, batt_temp, batt_volt, batt_cap, batt_curr, batt_fcc;
 	u8 reg;
 	bool is_high_cur;
 	bool is_high_vchg;
@@ -8997,6 +9064,8 @@ static void asus_JEITA_rule(struct smbchg_chip *chip) {
 	batt_temp = get_prop_batt_temp(chip);
 	batt_volt = get_prop_batt_voltage_now(chip);
 	batt_cap = get_prop_batt_capacity(chip);
+	batt_curr = get_prop_batt_current_now(chip);
+	batt_fcc = asus_get_prop_batt_FCC(chip);
 
 	if (chip->usb_supply_type != POWER_SUPPLY_TYPE_USB) {
 		// AICL done(0x1307[5])
@@ -9020,9 +9089,9 @@ static void asus_JEITA_rule(struct smbchg_chip *chip) {
 	if (!is_usb_present(chip)) {
 		pr_info("soc: %d%%, voltage: %d mV, temp: %d C, current: %d mA, last_temp_state: %d\n",
 			batt_cap, batt_volt/1000, batt_temp/10,
-			-get_prop_batt_current_now(chip)/1000, chip->asus_batt_last_state);
-		ASUSEvtlog("[BAT][Ser]report Capacity ==>%d, V:%dmV, Cur:%dmA, Temp:%dC\n",
-			batt_cap, batt_volt/1000, -get_prop_batt_current_now(chip)/1000, batt_temp/10);
+			-batt_curr/1000, chip->asus_batt_last_state);
+		ASUSEvtlog("[BAT][Ser]report Capacity ==>%d, FCC:%dmAh, BMS:%d, V:%dmV, Cur:%dmA, Temp:%dC\n",
+			batt_cap, batt_fcc, batt_cap, batt_volt/1000, -batt_curr/1000, batt_temp/10);
 		pr_info("usb removed!! bypass JEITA check\n");
 		queue_delayed_work(smbchg_wq, &chip->asus_JEITA_check_work, msecs_to_jiffies(60000));
 		return;
@@ -9183,12 +9252,14 @@ skip_jeita_setting:
 	batt_temp = get_prop_batt_temp(chip);
 	batt_volt = get_prop_batt_voltage_now(chip);
 	batt_cap = get_prop_batt_capacity(chip);
+	batt_curr = get_prop_batt_current_now(chip);
+	batt_fcc = asus_get_prop_batt_FCC(chip);
 	pr_info("soc: %d%%, voltage: %d mV, temp: %d C, current: %d mA, last_temp_state: %d\n",
 		batt_cap, batt_volt/1000, batt_temp/10,
-		-get_prop_batt_current_now(chip)/1000, chip->asus_batt_last_state);
+		-batt_curr/1000, chip->asus_batt_last_state);
 	pr_info("hvdcp flag = %d, dual flag : %d\n", chip->asus_hvdcp_flag, chip->asus_dual_flag);
-	ASUSEvtlog("[BAT][Ser]report Capacity ==>%d, V:%dmV, Cur:%dmA, Temp:%dC\n",
-			batt_cap, batt_volt/1000, -get_prop_batt_current_now(chip)/1000, batt_temp/10);
+	ASUSEvtlog("[BAT][Ser]report Capacity ==>%d, FCC:%dmAh, BMS:%d, V:%dmV, Cur:%dmA, Temp:%dC\n",
+			batt_cap, batt_fcc, batt_cap, batt_volt/1000, -batt_curr/1000, batt_temp/10);
 
 #ifdef PD_CHARGING_DRIVER_SUPPORT
 	pr_info("type C adapter : %d, %d mV, %d mA\n", chip->asus_typec_chg, chip->asus_pd_volt, chip->asus_pd_curr);
@@ -9316,7 +9387,7 @@ out:
 static void asus_update_battery_func(struct work_struct *work) {
 	struct smbchg_chip *chip = container_of(work, struct smbchg_chip,
 		asus_update_battery_work.work);
-	int batt_temp, batt_volt, batt_cap;
+	int batt_temp, batt_volt, batt_cap, batt_curr, batt_fcc;
 
 	wake_lock(&chip->asus_update_battery_wake_lock);
 	if (chip->psy_registered)
@@ -9325,12 +9396,14 @@ static void asus_update_battery_func(struct work_struct *work) {
 	batt_temp = get_prop_batt_temp(chip);
 	batt_volt = get_prop_batt_voltage_now(chip);
 	batt_cap = get_prop_batt_capacity(chip);
+	batt_curr = get_prop_batt_current_now(chip);
+	batt_fcc = asus_get_prop_batt_FCC(chip);
 
 	pr_info("soc: %d%%, voltage: %d mV, temp: %d C, current: %d mA, last_temp_state: %d\n",
 		batt_cap, batt_volt/1000, batt_temp/10,
-		-get_prop_batt_current_now(chip)/1000, chip->asus_batt_last_state);
-	ASUSEvtlog("[BAT][Ser]report Capacity ==>%d, V:%dmV, Cur:%dmA, Temp:%dC",
-		batt_cap, batt_volt/1000, -get_prop_batt_current_now(chip)/1000, batt_temp/10);
+		-batt_curr/1000, chip->asus_batt_last_state);
+	ASUSEvtlog("[BAT][Ser]report Capacity ==>%d, FCC:%dmAh, BMS:%d, V:%dmV, Cur:%dmA, Temp:%dC",
+		batt_cap, batt_fcc, batt_cap, batt_volt/1000, -batt_curr/1000, batt_temp/10);
 
 	if(wake_lock_active(&chip->asus_update_battery_wake_lock))
 		wake_unlock(&chip->asus_update_battery_wake_lock);
@@ -9751,7 +9824,7 @@ static int smbchg_probe(struct spmi_device *spmi)
 	if (rc) {
 		dev_err(&spmi->dev,
 			"Couldn't initialize regulator rc=%d\n", rc);
-		return rc;
+		goto free_regulator;
 	}
 
 	rc = smbchg_hw_init(chip);

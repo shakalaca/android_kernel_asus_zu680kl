@@ -362,7 +362,6 @@ static bool fw_get_filesystem_firmware(struct device *device,
 	int i;
 	bool success = false;
 	char *path = __getname();
-	dev_dbg(device, "[wlan]: %s +++\n", __func__);
 	if (!path)
 		return false;
 
@@ -374,14 +373,12 @@ static bool fw_get_filesystem_firmware(struct device *device,
 			continue;
 
 		snprintf(path, PATH_MAX, "%s/%s", fw_path[i], buf->fw_id);
-
 		if (!strncmp(buf->fw_id , "adsp", 4)) {
 			snprintf(path, PATH_MAX, "%s/%s", "/system/etc/firmware", buf->fw_id);
 			dev_err(device, "[Sensor] Try to load firmware : %s \n", path);
 		}
 
 		file = filp_open(path, O_RDONLY, 0);
-		dev_dbg(device, "[wlan]: %s: fw_path[%d] = %s\n", __func__, i, path);
 		if (IS_ERR(file))
 			continue;
 		success = fw_read_file_contents(file, buf);
@@ -400,7 +397,6 @@ static bool fw_get_filesystem_firmware(struct device *device,
 		mutex_unlock(&fw_lock);
 	}
 
-	dev_dbg(device, "[wlan]: %s ---\n", __func__);
 	return success;
 }
 
@@ -1070,6 +1066,7 @@ static int _request_firmware_load(struct firmware_priv *fw_priv, bool uevent,
 	}
 
 	wait_for_completion(&buf->completion);
+
 	cancel_delayed_work_sync(&fw_priv->timeout_work);
 
 	if (!buf->data && buf->is_paged_buf)
@@ -1089,7 +1086,6 @@ static int fw_load_from_user_helper(struct firmware *firmware,
 				    struct fw_desc *desc, long timeout)
 {
 	struct firmware_priv *fw_priv;
-	dev_dbg(desc->device, "[wlan]: %s Entered\n", __func__);
 
 	fw_priv = fw_create_instance(firmware, desc);
 	if (IS_ERR(fw_priv))

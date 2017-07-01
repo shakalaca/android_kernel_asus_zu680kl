@@ -1025,6 +1025,7 @@ static long do_video_ioctl(struct file *file, unsigned int cmd, unsigned long ar
 	}
 	return err;
 }
+
 extern long msm_led_flash_ioctl(struct file *file, unsigned int cmd, unsigned long arg);
 long v4l2_compat_ioctl32(struct file *file, unsigned int cmd, unsigned long arg)
 {

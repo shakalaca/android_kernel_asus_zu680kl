@@ -16,7 +16,7 @@
 //#define  PD_CTS_TEST
 #define SUP_OHIO_INT_VECTOR
 //#define SUP_VBUS_CTL
-//#define AUTO_RDO_ENABLE
+#define AUTO_RDO_ENABLE
 #define SUP_TRY_SRC_SINK
 
 #define YES     1
@@ -109,6 +109,7 @@
 #define VBUS_CHANGE 0x08
 #define CC_STATUS_CHANGE 0x10
 #define DATA_ROLE_CHANGE 0x20
+#define PD_GOT_POWER 0x40
 
 #define OHIO_SYSTEM_STSTUS 0x29
 /*0: VCONN off; 1: VCONN on*/
@@ -139,6 +140,9 @@
 #define MAX_VOLTAGE_SETTING 0xd0
 #define MAX_POWER_SETTING 0xd1
 #define MIN_POWER_SETTING 0xd2
+
+void ohio_power_standby(void);
+void ohio_hardware_poweron(void);
 
 unsigned char OhioReadReg(unsigned char RegAddr);
 void OhioWriteReg(unsigned char RegAddr, unsigned char RegVal);
@@ -263,6 +267,7 @@ void pd_vconn_control_default_func(bool on);
 void pd_cc_status_default_func(u8 cc_status);
 void pd_drole_change_default_func(bool on);
 void handle_intr_vector(void);
+void pd_got_rdo_max_value(void);
 
 /* 0, send interface msg timeout
   * 1 successfull */

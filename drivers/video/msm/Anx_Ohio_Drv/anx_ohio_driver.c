@@ -67,6 +67,7 @@ struct ohio_data {
 	struct dual_role_phy_instance *dual_role;
 };
 
+
 /* ohio power status, sync with interface and cable detection thread */
 
 inline unsigned char OhioReadReg(unsigned char RegAddr)
@@ -431,16 +432,18 @@ static irqreturn_t ohio_cbl_det_isr(int irq, void *data)
 			#endif
 		}
 		atomic_set(&ohio_power_status, 1);
+		pm_stay_awake(&ohio_client->dev);
 		ohio_hardware_poweron();
+		pm_relax(&ohio_client->dev);
 	} else {
 		atomic_set(&ohio_power_status, 0);
+		ohio_power_standby();
 		asus_otg_boost_enable(0, (bool)g_reverse_charger_mode);
 		if(!msm_otg_id_state())
 			power_supply_set_usb_otg(usb_psy, 0);
 		#ifdef SUP_VBUS_CTL
 		gpio_set_value(ohio->pdata->gpio_vbus_ctrl, 0);
 		#endif
-		ohio_power_standby();
 	}
 
 	if (ohio->dual_role)
@@ -455,6 +458,7 @@ static irqreturn_t ohio_intr_comm_isr(int irq, void *data)
 	if (atomic_read(&ohio_power_status) != 1)
 		return IRQ_NONE;
 
+	pm_stay_awake(&ohio_client->dev);
 	if (is_soft_reset_intr()) { 
 #ifdef OHIO_DEBUG_RX
 		pr_info("%s %s : ======I=====\n", LOG_TAG, __func__);
@@ -462,6 +466,7 @@ static irqreturn_t ohio_intr_comm_isr(int irq, void *data)
 
 	handle_intr_vector();
 	}
+	pm_relax(&ohio_client->dev);
 	return IRQ_HANDLED;
 }
 #endif
@@ -799,6 +804,8 @@ static int ohio_i2c_probe(struct i2c_client *client,
 		pr_err("%s: failed to initialize gpio\n", __func__);
 		goto err0;
 	}
+
+	device_init_wakeup(&client->dev, true);
 
 	#if 0
 	INIT_DELAYED_WORK(&ohio->work, ohio_work_func);

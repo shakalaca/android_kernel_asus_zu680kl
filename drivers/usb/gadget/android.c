@@ -92,9 +92,8 @@ static const char longname[] = "Gadget Android";
 static int diag_enable = 0;
 //ASUS_BSP--- "[USB][NA][Spec] add diag enable support in kernel"
 extern int getMACConnect(void);
+extern int resetHostTypeChanged(void);
 extern int getHostTypeChanged(void);
-extern void resetHostTypeChanged(void);
-
 /* Default vendor and product IDs, overridden by userspace */
 #define VENDOR_ID		0x18D1
 #define PRODUCT_ID		0x0001
@@ -497,7 +496,7 @@ static void android_work(struct work_struct *data)
 			last_uevent = next_state;
 			if(getHostTypeChanged()){
 				kobject_uevent_env(&dev->dev->kobj, KOBJ_CHANGE,
-									host_changed);
+						host_changed);
 				resetHostTypeChanged();
 			}
 		}
@@ -1861,6 +1860,19 @@ static int serial_function_bind_config(struct android_usb_function *f,
 			}
 		}
 	}
+	/*
+	 * Make sure we always have two serials ports initialized to allow
+	 * switching composition from 1 serial function to 2 serial functions.
+	 * Mark 2nd port to use tty if user didn't specify transport.
+	 */
+	if ((config->instances_on == 1) && !serial_initialized) {
+		err = gserial_init_port(ports, "tty", "serial_tty");
+		if (err) {
+			pr_err("serial: Cannot open port '%s'", "tty");
+			goto out;
+		}
+		config->instances_on++;
+	}
 
 	/* limit the serial ports init only for boot ports */
 	if (ports > config->instances_on)
@@ -1875,8 +1887,7 @@ static int serial_function_bind_config(struct android_usb_function *f,
 		goto out;
 	}
 
-	config->instances_on = ports;
-	for (i = 0; i < ports; i++) {
+	for (i = 0; i < config->instances_on; i++) {
 		config->f_serial_inst[i] = usb_get_function_instance("gser");
 		if (IS_ERR(config->f_serial_inst[i])) {
 			err = PTR_ERR(config->f_serial_inst[i]);
@@ -3262,6 +3273,8 @@ functions_store(struct device *pdev, struct device_attribute *attr,
 
 //ASUS_BSP--- "[USB][NA][Spec] add diag enable support in kernel"
 	b = strim(buf);
+	
+	printk("[USB] func:%s\n",buf);
 
 	dev->cdev->gadget->streaming_enabled = false;
 
@@ -3270,8 +3283,6 @@ functions_store(struct device *pdev, struct device_attribute *attr,
 	}else{
 		printk("[USB] Connect to Other\n");
 	}
-	printk("[USB] func:%s\n",buf);
-	ASUSEvtlog("[USB] func:%s\n",buf);
 	
 	while (b) {
 		conf_str = strsep(&b, ":");
@@ -3313,14 +3324,14 @@ functions_store(struct device *pdev, struct device_attribute *attr,
 				continue;
 			}
 			if(getMACConnect()&&strcmp(name,"rndis")==0){
-				err = android_enable_function(dev, conf, "ecm");
+					err = android_enable_function(dev, conf, "ecm");
 			} else {
 				if (!strcmp(name, "rndis") &&
 					!strcmp(strim(rndis_transports), "BAM2BAM_IPA"))
-				name = "rndis_qc";
+					name = "rndis_qc";
+
 				err = android_enable_function(dev, conf, name);
 			}
-
 			if (err)
 				pr_err("android_usb: Cannot enable '%s' (%d)",
 							name, err);

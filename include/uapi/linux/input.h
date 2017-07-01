@@ -783,14 +783,6 @@ struct input_keymap_entry {
 #define BTN_TRIGGER_HAPPY39		0x2e6
 #define BTN_TRIGGER_HAPPY40		0x2e7
 
-#define KEYCODE_FINGERPRINT_SWIPE_UP 	0x2e8
-#define KEYCODE_FINGERPRINT_SWIPE_DOWN 	0x2e9
-#define KEYCODE_FINGERPRINT_SWIPE_LEFT 	0x2ea
-#define KEYCODE_FINGERPRINT_SWIPE_RIGHT 0x2eb
-#define KEYCODE_FINGERPRINT_TAP 	0x2ec
-#define KEYCODE_FINGERPRINT_DTAP 	0x2ed
-#define KEYCODE_FINGERPRINT_LONGPRESS	0x2ee
-
 /* We avoid low common keys in module aliases so they don't get huge. */
 #define KEY_MIN_INTERESTING	KEY_MUTE
 #define KEY_MAX			0x2ff

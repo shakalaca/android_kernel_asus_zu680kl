@@ -317,7 +317,6 @@ int wcnss_irq_flag_function_wdi(void){
 }
 EXPORT_SYMBOL(wcnss_irq_flag_function_wdi);
 
-
 //ASUS_BSP--- "for wlan wakeup trace"
 
 //ASUS_BSP +++ Johnny [Qcom][PS][][ADD]Print first IP address log when IRQ 57
@@ -345,6 +344,20 @@ uint32_t gic_return_irq_pending(void)
 	return val;
 }
 EXPORT_SYMBOL(gic_return_irq_pending);
+
+/*ASUS-BBSP Log Modem Wake Up Info+++*/
+#define MODEM_IRQ_VALUE 57
+static int modem_resume_irq_flag = 0;
+int modem_resume_irq_flag_function(void)
+{
+	if( modem_resume_irq_flag == 1 ) {
+		modem_resume_irq_flag = 0;
+		return 1;
+	}
+	return 0;
+}
+EXPORT_SYMBOL(modem_resume_irq_flag_function);
+/*ASUS-BBSP Log Modem Wake Up Info---*/
 
 static void gic_show_resume_irq(struct gic_chip_data *gic)
 {
@@ -385,25 +398,34 @@ static void gic_show_resume_irq(struct gic_chip_data *gic)
 		pr_warning("%s: %d triggered %s\n", __func__,
 					i + gic->irq_offset, name);
 
+		//ASUS_BSP+++ "for wlan wakeup trace"
+		if( (i + gic->irq_offset) == 178 ){
+			printk("%s: [wlan] wcnss gic(%d) triggered g_wcnss_wlanrx_irq(%d)\n", __func__,
+					i + gic->irq_offset, g_wcnss_wlanrx_irq);
+			printk("%s: [wlan] wcnss force g_wcnss_wlanrx_irq=178, wcnss_irq_flag_rx=1\n", __func__);
+		    wcnss_irq_flag_rx = 1;
+		    wcnss_irq_flag_wdi = 1;
+		}
+		//ASUS_BSP--- "for wlan wakeup trace"
+
+		/*ASUS-BBSP Log Modem Wake Up Info+++*/
+		if( (i + gic->irq_offset) == MODEM_IRQ_VALUE ) {
+			modem_resume_irq_flag = 1;
+		}
+		/*ASUS-BBSP Log Modem Wake Up Info---*/
+
 		//[+++][Power]save IRQ's counts and number
 		if (gic_irq_cnt < 8)
 			gic_resume_irq[gic_irq_cnt] = i + gic->irq_offset;
 		gic_irq_cnt++;
 		//[---][Power]save IRQ's counts and number
 
-		//ASUS_BSP+++ "for wlan wakeup trace"
-		if( (i + gic->irq_offset) == g_wcnss_wlanrx_irq ){
-		    wcnss_irq_flag_rx = 1;
-		    wcnss_irq_flag_wdi = 1;
-		}
-		//ASUS_BSP--- "for wlan wakeup trace"
-
-                //ASUS_BSP +++ Johnny [Qcom][PS][][ADD]Print first IP address log when IRQ 57
+                //ASUS_BSP +++ Johnny [Qcom][PS][][ADD]Print first IP address log when IRQ 260
                 if( (i + gic->irq_offset) == 260 ){
                     rmnet_irq_flag_rx = 1;
                     //printk("%s: [data] Johnny test\n", __func__);
                 }
-                //ASUS_BSP --- Johnny [Qcom][PS][][ADD]Print first IP address log when IRQ 57
+                //ASUS_BSP --- Johnny [Qcom][PS][][ADD]Print first IP address log when IRQ 260
 
 
 	}

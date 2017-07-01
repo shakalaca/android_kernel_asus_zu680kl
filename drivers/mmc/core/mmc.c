@@ -807,9 +807,9 @@ MMC_DEV_ATTR(rel_sectors, "%#x\n", card->ext_csd.rel_sectors);
 MMC_DEV_ATTR(sec_count, "0x%x\n", card->ext_csd.sectors);
 MMC_DEV_ATTR(rev, "0x%x\n", card->ext_csd.rev);
 MMC_DEV_ATTR(emmc_total_size, "%d\n", card->mmc_total_size);
-MMC_DEV_ATTR(pre_eol_info, "0x%x\n", card->ext_csd.raw_pre_eol_info);
-MMC_DEV_ATTR(life_time_A, "0x%x\n", card->ext_csd.raw_device_life_time_A);
-MMC_DEV_ATTR(life_time_B, "0x%x\n", card->ext_csd.raw_device_life_time_B);
+MMC_DEV_ATTR(pre_eol_info, "0x%02x\n", card->ext_csd.raw_pre_eol_info);
+MMC_DEV_ATTR(life_time_A, "0x%02x\n", card->ext_csd.raw_device_life_time_A);
+MMC_DEV_ATTR(life_time_B, "0x%02x\n", card->ext_csd.raw_device_life_time_B);
 
 static struct attribute *mmc_std_attrs[] = {
 	&dev_attr_cid.attr,

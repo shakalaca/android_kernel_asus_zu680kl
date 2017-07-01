@@ -331,6 +331,9 @@ static void gpio_keys_gpio_report_event(struct gpio_button_data *bdata)
 	unsigned int type = button->type ?: EV_KEY;
 	int state = (gpio_get_value_cansleep(button->gpio) ? 1 : 0) ^ button->active_low;
 
+	if (type == EV_KEY)
+		pr_info("gpio_keys:%s %s\n", state ? "Pressed":"Released", button->desc);
+
 	if (type == EV_ABS) {
 		if (state)
 			input_event(input, type, button->code, button->value);

@@ -4553,6 +4553,7 @@ static void msm_otg_sm_work(struct work_struct *w)
 					motg->inputs, otg->phy->state);
 			otg->default_a = 0;
 			clear_bit(A_BUS_DROP, &motg->inputs);
+			clear_bit(A_BUS_REQ, &motg->inputs);
 			otg->phy->state = OTG_STATE_B_IDLE;
 			del_timer_sync(&motg->id_timer);
 			msm_otg_link_reset(motg);

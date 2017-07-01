@@ -1264,6 +1264,7 @@ int i2c_read_thu_imx318(uint8_t *value, int num, uint8_t *read_data, int read_nu
 		ret |= i2c_write(client, 0x3378+i, (uint16_t)value[i], 1);
 	}
 	ret |= i2c_write(client, 0x3370, 0x82, 1);
+	usleep_range(100, 110);
 
 	/* polling to make sure the communication is done */
 	for (i = 0; i < 300; i++) {

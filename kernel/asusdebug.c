@@ -9,6 +9,7 @@
 #include <linux/rtc.h>
 #include <linux/list.h>
 #include <linux/syscalls.h>
+#include <linux/slab.h>
 #include <linux/delay.h>
 #include <asm/uaccess.h>
 #include <asm/io.h>
@@ -53,6 +54,11 @@ static int g_Asus_Eventlog_write = 0;
 static int bootup = -MAX_ERRNO;
 static void do_write_event_worker(struct work_struct *work);
 static DECLARE_WORK(eventLog_Work, do_write_event_worker);
+
+static struct kset *dropbox_uevent_kset;
+static struct kobject *ssr_reason_kobj;
+static struct work_struct send_ssr_reason_dropbox_uevent_work;
+static void send_ssr_reason_dropbox_uevent_work_handler(struct work_struct *work);
 
 /*ASUS-BBSP SubSys Health Record+++*/
 static char g_SubSys_W_Buf[SUBSYS_W_MAXLEN];
@@ -391,6 +397,8 @@ void SubSysHealthRecord(const char *fmt, ...)
 	/*printk("g_SubSys_W_Buf = %s", g_SubSys_W_Buf);*/
 
 	queue_work(ASUSEvtlog_workQueue, &subsys_w_Work);
+
+        schedule_work(&send_ssr_reason_dropbox_uevent_work);
 }
 EXPORT_SYMBOL(SubSysHealthRecord);
 
@@ -465,7 +473,6 @@ static ssize_t asusevtlog_write(struct file *file, const char __user *buf, size_
 	if (copy_from_user(messages, buf, count))
 		return -EFAULT;
 	ASUSEvtlog(messages);
-
 	return count;
 }
 
@@ -516,6 +523,55 @@ static const struct file_operations proc_asusdebug_operations = {
 	.release  = asusdebug_release,
 };
 
+static void send_ssr_reason_dropbox_uevent_work_handler(struct work_struct *work)
+{
+    if (ssr_reason_kobj)
+    {
+        char uevent_buf[512];
+        char *envp[] = { uevent_buf, NULL };
+        snprintf(uevent_buf, sizeof(uevent_buf), "SSR_REASON=%s", g_SubSys_W_Buf);
+        kobject_uevent_env(ssr_reason_kobj, KOBJ_CHANGE, envp);
+    }
+}
+
+static void dropbox_uevent_release(struct kobject *kobj)
+{
+    kfree(kobj);
+}
+
+static struct kobj_type dropbox_uevent_ktype = {
+    .release = dropbox_uevent_release,
+};
+
+static int dropbox_uevent_init(void)
+{
+    int ret;
+    dropbox_uevent_kset = kset_create_and_add("dropbox_uevent", NULL, kernel_kobj);
+    if (!dropbox_uevent_kset) {
+        printk("%s: failed to create dropbox_uevent_kset", __func__);
+        return -ENOMEM;
+    }
+
+    ssr_reason_kobj = kzalloc(sizeof(*ssr_reason_kobj), GFP_KERNEL);
+    if (!ssr_reason_kobj) {
+        printk("%s: failed to create ssr_reason_kobj", __func__);
+        return -ENOMEM;
+    }
+
+    ssr_reason_kobj->kset = dropbox_uevent_kset;
+
+    ret = kobject_init_and_add(ssr_reason_kobj, &dropbox_uevent_ktype, NULL, "ssr_reason");
+    if (ret)
+    {
+        printk("%s: failed to init ssr_reason_kobj", __func__);
+        kobject_put(ssr_reason_kobj);
+        return -EINVAL;
+    }
+    kobject_uevent(ssr_reason_kobj, KOBJ_ADD);
+    INIT_WORK(&send_ssr_reason_dropbox_uevent_work, send_ssr_reason_dropbox_uevent_work_handler);
+    return 0;
+}
+
 static int __init proc_asusdebug_init(void)
 {
 
@@ -530,6 +586,8 @@ static int __init proc_asusdebug_init(void)
 	/*ASUS-BBSP SubSys Health Record---*/
 
 	ASUSEvtlog_workQueue  = alloc_workqueue("ASUSEVTLOG_WORKQUEUE" , __WQ_ORDERED | WQ_FREEZABLE | WQ_UNBOUND | WQ_MEM_RECLAIM, 1);
+
+        dropbox_uevent_init();
 	return 0;
 }
 module_init(proc_asusdebug_init);

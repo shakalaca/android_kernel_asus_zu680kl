@@ -35,6 +35,7 @@
 #include <linux/eventfd.h>
 #include <linux/uaccess.h>
 #include <linux/of_gpio.h>
+#include <linux/wakelock.h>
 #include <linux/slab.h>
 #ifdef CONFIG_COMPAT
 #include <linux/compat.h>
@@ -72,6 +73,7 @@ struct vfs_platform_dev_data {
 	struct list_head device_entry;
 	struct mutex buffer_mutex;
 	unsigned int is_opened;
+	struct wake_lock wlock;
 
 	int drdy_pin;
 	int sleep_pin;
@@ -117,7 +119,7 @@ static long vfs_platform_compat_ioctl(struct file *filp, unsigned int cmd,
 static long vfs_platform_ioctl(struct file *filp, unsigned int cmd,
 		unsigned long arg, int compat);
 static void vfs_platform_hard_reset(struct vfs_platform_dev_data *vfs_platform_dev);
-static void vfs_platform_suspend(struct vfs_platform_dev_data *vfs_platform_dev);
+static void vfs_platform_sleep(struct vfs_platform_dev_data *vfs_platform_dev);
 static int vfs_platform_register_drdy_signal(struct vfs_platform_dev_data *vfs_platform_dev,
 		unsigned long arg);
 static int vfs_platform_set_drdy_int(struct vfs_platform_dev_data *vfs_platform_dev,
@@ -524,6 +526,10 @@ static int vfs_platform_send_drdy_notify(struct vfs_platform_dev_data *vfs_platf
 
 		/* Release eventfd context */
 		eventfd_ctx_put(efd_ctx);
+
+		/* workaround, give user space some time to process events. */
+		wake_lock_timeout(&vfs_platform_dev->wlock,
+				msecs_to_jiffies(3500));
 	}
 
 cleanup:
@@ -573,7 +579,7 @@ long vfs_platform_ioctl(struct file *filp, unsigned int cmd, unsigned long arg,
 	case VFSSPI_IOCTL_DEVICE_SUSPEND:
 		{
 			PR_INFO("VFSSPI_IOCTL_DEVICE_SUSPEND:");
-			vfs_platform_suspend(vfs_platform_dev);
+			vfs_platform_sleep(vfs_platform_dev);
 			break;
 		}
 	case VFSSPI_IOCTL_DEVICE_RESET:
@@ -657,9 +663,9 @@ void vfs_platform_hard_reset(struct vfs_platform_dev_data *vfs_platform_dev)
 	}
 }
 
-void vfs_platform_suspend(struct vfs_platform_dev_data *vfs_platform_dev)
+void vfs_platform_sleep(struct vfs_platform_dev_data *vfs_platform_dev)
 {
-	PR_INFO("vfs_platform_suspend\n");
+	PR_INFO("vfs_platform_sleep\n");
 
 	if (vfs_platform_dev != NULL) {
 		spin_lock(&vfs_platform_dev->vfs_platform_lock);
@@ -845,6 +851,7 @@ int vfs_platform_probe(struct platform_device *pdev)
 	if (status != 0)
 		pr_warn("Failed to crate wakeup %d\n", status);
 	vfs_platform_dev->wakeup_source = 0;
+	wake_lock_init(&vfs_platform_dev->wlock, WAKE_LOCK_SUSPEND, "fp_lock");
 
 	PR_INFO("vfs_platform_probe succeeded\n");
 

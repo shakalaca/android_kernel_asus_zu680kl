@@ -56,9 +56,20 @@ static int vcm_threshold_um = 0;
 #define SERVO_ON SERVO_OFF_COUNT+1
 #define VCM_NOISE_WA 1
 #if VCM_NOISE_WA
-static int vcm_servo_status = SERVO_ON;	/* 4: servo on, 0~3:server off */
-static uint16_t vcm_data_g = 0xA000;
+static int vcm_servo_status = SERVO_ON;	/* 3: servo on, 0~1:server off */
+static uint16_t vcm_data_g = 0x0A00;	/* Set servo on default position to 2208. This would be overwirtten by userspace vcm command */
 static struct task_struct *brook_tsk;
+
+static uint16_t translate_vcm_register_to_value(uint16_t input)
+{
+	uint16_t output = 0;
+	if (input <= 0x8000)
+		output = (input>>4) + 2048;
+	else
+		output = (input>>4) - 2048;
+	return output;
+}
+
 static int kbrook(void *arg)
 {
 	uint16_t vcm_data = 0;
@@ -87,7 +98,7 @@ static int kbrook(void *arg)
 		} else if (vcm_data < actuator_data_Z1_minus_Xum && vcm_servo_status < SERVO_OFF_COUNT) {
 			vcm_servo_status = 0;
 		} else if (vcm_data >= actuator_data_Z1_minus_Xum && vcm_servo_status == SERVO_OFF_COUNT) {
-			pr_err("[vcm] servo on, z1:%u z2:%u Z1-Xum:%u cur_position %u then set to %u\n",actuator_data_Z1, actuator_data_Z2, actuator_data_Z1_minus_Xum, vcm_data, vcm_data_g>>4);
+			pr_err("[vcm] servo on, z1:%u z2:%u Z1-Xum:%u cur_position %u then set to %u\n",actuator_data_Z1, actuator_data_Z2, actuator_data_Z1_minus_Xum, vcm_data, translate_vcm_register_to_value(vcm_data_g));
 			reg_vcm_pos_set_0[2] = (vcm_data_g & 0xFF00) >> 8;
 			reg_vcm_pos_set_0[3] = vcm_data_g & 0x00FF;
 			i2c_write_thu_imx318(reg_servo_on, 3);
@@ -336,7 +347,7 @@ static int msm_actuator_bivcm_handle_i2c_ops(
 #if VCM_NOISE_WA
 			if (vcm_servo_status == SERVO_ON){
 				vcm_data_g = value;
-				pr_debug("[vcm] next_lens_position=%d, vcm_data_g=%u set pos to %u\n", next_lens_position, vcm_data_g, vcm_data_g>>4);
+				pr_debug("[vcm] next_lens_position=%d, vcm_data_g=%u set pos to %u\n", next_lens_position, vcm_data_g, translate_vcm_register_to_value(vcm_data_g));
 #endif
 				rc = a_ctrl->i2c_client.
 					i2c_func_tbl->i2c_write_table_w_microdelay(

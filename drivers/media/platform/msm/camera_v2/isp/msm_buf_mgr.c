@@ -193,6 +193,12 @@ static int msm_isp_prepare_isp_buf(struct msm_isp_buf_mgr *buf_mgr,
 	uint32_t accu_length = 0;
 	int iommu_hdl;
 
+	if (qbuf_buf->num_planes > MAX_PLANES_PER_STREAM) {
+		pr_err("%s: Invalid num_planes %d\n",
+			__func__, qbuf_buf->num_planes);
+		return -EINVAL;
+	}
+
 	if (buf_mgr->secure_enable == NON_SECURE_MODE)
 		iommu_hdl = buf_mgr->ns_iommu_hdl;
 	else
@@ -236,6 +242,12 @@ static void msm_isp_unprepare_v4l2_buf(
 	int i;
 	struct msm_isp_buffer_mapped_info *mapped_info;
 	int iommu_hdl;
+
+	if (buf_info->num_planes > VIDEO_MAX_PLANES) {
+		pr_err("%s: Invalid num_planes %d\n",
+			__func__, buf_info->num_planes);
+		return;
+	}
 
 	if (buf_mgr->secure_enable == NON_SECURE_MODE)
 		iommu_hdl = buf_mgr->ns_iommu_hdl;
